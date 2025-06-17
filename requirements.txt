@@ -1,0 +1,12 @@
+transformers
+datasets
+sentencepiece
+torch
+label-studio
+fastapi
+uvicorn
+streamlit
+python-docx
+scikit-learn
+pandas
+numpy

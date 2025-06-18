@@ -27,6 +27,7 @@ doc-translate-template/
 └── README.md
 
 ###  Key Features
+
 - Multilingual translation using MarianMT (EN, FR, AR, etc.)
 - Fine-tuning on ~50 aligned document pairs
 - Field-level tagging using Label Studio
@@ -35,6 +36,7 @@ doc-translate-template/
 - UI (in development) to upload, tag, and visualize translation flow
 
 ### To run this project locally, follow these steps:
+
 ```bash
 git clone https://github.com/eya2105/doc-translate-template.git
 cd doc-translate-template

@@ -6,7 +6,7 @@ This project is part of the Dabba Dabba Summer Internship (Model 2) and focuses 
 
 The goal is to translate official documents (e.g., visa forms, certificates) between languages like English, French, Arabic, German, and Italian — while learning to recognize new templates by tagging fields through a user interface.
 
-### project Structure 
+##  Project Structure 
 
 doc-translate-template/
 
@@ -26,7 +26,7 @@ doc-translate-template/
 
 └── README.md
 
-###  Key Features
+##  Key Features
 
 - Multilingual translation using MarianMT (EN, FR, AR, etc.)
 - Fine-tuning on ~50 aligned document pairs
@@ -35,7 +35,7 @@ doc-translate-template/
 - Optional human validation layer for certified translations
 - UI (in development) to upload, tag, and visualize translation flow
 
-### To run this project locally, follow these steps:
+##  To run this project locally, follow these steps:
 
 ```bash
 git clone https://github.com/eya2105/doc-translate-template.git

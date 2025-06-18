@@ -9,14 +9,20 @@ The goal is to translate official documents (e.g., visa forms, certificates) bet
 ### project Structure 
 
 doc-translate-template/
+
 ├── data/               # Raw + processed documents
 
 ├── models/             # Saved MarianMT models
+
 ├── scripts/            # Translation and training scripts
 │   └── translate.py
+
 ├── templates/          # Field mapping configs
+
 ├── ui/                 # Streamlit/FastAPI (in progress)
+
 ├── requirements.txt    # All required dependencies
+
 └── README.md
 
 ###  Key Features

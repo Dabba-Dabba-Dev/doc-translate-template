@@ -15,6 +15,7 @@ doc-translate-template/
 ├── models/             # Saved MarianMT models
 
 ├── scripts/            # Translation and training scripts
+
 │   └── translate.py
 
 ├── templates/          # Field mapping configs

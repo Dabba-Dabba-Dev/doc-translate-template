@@ -10,6 +10,7 @@ The goal is to translate official documents (e.g., visa forms, certificates) bet
 
 doc-translate-template/
 ├── data/               # Raw + processed documents
+
 ├── models/             # Saved MarianMT models
 ├── scripts/            # Translation and training scripts
 │   └── translate.py

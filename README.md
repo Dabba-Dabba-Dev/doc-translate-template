@@ -43,4 +43,25 @@ cd doc-translate-template
 python -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 pip install -r requirements.txt
+```
 
+##  Docker Setup
+
+To build and run the project using Docker:
+
+```bash
+docker-compose build --no-cache
+docker compose up
+```
+
+Once running, you can access:
+
+- Label Studio UI at: [Link Text](http://localhost:8080)
+
+- Translator API (if exposed) at: [Link Text](http://localhost:8080)
+
+This will launch both:
+
+- The translator service (FastAPI backend for translation)
+
+- The labelstudio service (for tagging fields in documents)

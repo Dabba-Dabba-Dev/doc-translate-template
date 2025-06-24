@@ -1,0 +1,17 @@
+FROM python:3.9
+
+WORKDIR /app
+
+# Install Tesseract OCR and OpenCV dependencies
+RUN apt-get update && \
+    apt-get install -y tesseract-ocr libglib2.0-0 libsm6 libxrender1 libxext6 libgl1 && \
+    rm -rf /var/lib/apt/lists/*
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY image_to_text.py .
+
+# Remove or comment out the tesseract_cmd line in your script for Docker use
+
+CMD ["python", "image_to_text.py"]

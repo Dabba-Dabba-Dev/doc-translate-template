@@ -9,3 +9,5 @@ python-docx
 scikit-learn
 pandas
 numpy<2
+
+

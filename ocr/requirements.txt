@@ -1,3 +1,4 @@
 pytesseract
 pillow
 opencv-python
+requests

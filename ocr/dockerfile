@@ -4,11 +4,11 @@ WORKDIR /app
 
 # Install Tesseract OCR and OpenCV dependencies
 RUN apt-get update && \
-    apt-get install -y tesseract-ocr libglib2.0-0 libsm6 libxrender1 libxext6 libgl1 && \
+    apt-get install -y tesseract-ocr-all libglib2.0-0 libsm6 libxrender1 libxext6 libgl1 && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --default-timeout=100 --no-cache-dir -r requirements.txt
 
 COPY image_to_text.py .
 

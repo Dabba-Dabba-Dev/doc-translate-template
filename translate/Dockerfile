@@ -6,8 +6,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir torch==2.2.0 --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY translate.py .
-COPY bart.py .
+COPY mbart_ocr.py .
+COPY mbart_model.py .
+COPY ocr/image_to_text.py . 
 
 # Wrap your script in a FastAPI endpoint
-CMD ["uvicorn", "translate:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "mbart_ocr:app", "--host", "0.0.0.0", "--port", "8000"]

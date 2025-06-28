@@ -2,3 +2,8 @@ ocr/Screenshot 2025-06-25 212715.png
 ocr/Screenshot 2025-06-25 224812.png
 ocr/Shadowing-08-Acme-1024x576.jpg
 ...
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env

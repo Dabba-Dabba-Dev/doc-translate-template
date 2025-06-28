@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+import os
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 from transformers import MarianMTModel, MarianTokenizer
 import torch
 import time
@@ -7,7 +8,6 @@ import tracemalloc
 # Start measuring time and memory
 start_time = time.time()
 tracemalloc.start()
-app = FastAPI()
 
 # Load model at startup
 model_name = "Helsinki-NLP/opus-mt-en-fr"

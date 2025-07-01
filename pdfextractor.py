@@ -89,6 +89,6 @@ def extract_text_to_file(pdf_path, txt_path):
     print("Saved to", txt_path)
 
 if __name__ == "__main__":
-    input_pdf  = r"C:/Users/lenovo/Desktop/dabba dabba/doc-translate-template/doc.pdf"
+    input_pdf  = r"C:/Users/lenovo/Desktop/dabba dabba/doc-translate-template/dabbadabba.pdf"
     output_txt = os.path.splitext(input_pdf)[0] + "_final.txt"
     extract_text_to_file(input_pdf, output_txt)

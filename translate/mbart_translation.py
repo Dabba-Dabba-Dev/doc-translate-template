@@ -11,7 +11,7 @@ start_time = time.time()
 tracemalloc.start()
 
 # Try with Italian text
-text = "Das ist ein wichtiges Dokument."
+text = "This is a visa document."
 
 # Detect language
 result = lang_detect_pipe(text, top_k=1, truncation=True)
@@ -23,7 +23,7 @@ src_lang = f"{detected_lang}_IT" if detected_lang != "en" else "en_XX"
 
 tokenizer.src_lang = src_lang
 inputs = tokenizer(text, return_tensors="pt")
-generated_tokens = model.generate(**inputs, forced_bos_token_id=tokenizer.lang_code_to_id["en_XX"])
+generated_tokens = model.generate(**inputs, forced_bos_token_id=tokenizer.lang_code_to_id["fr_XX"])
 translated = tokenizer.decode(generated_tokens[0], skip_special_tokens=True)
 
 # Stop measuring memory and time

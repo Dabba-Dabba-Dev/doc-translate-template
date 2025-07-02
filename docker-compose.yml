@@ -5,7 +5,7 @@ services:
     container_name: translator
     ports:
       - "8000:8000"
-    restart: always
+    restart: "no"
 
   labelstudio:
     image: heartexlabs/label-studio:latest
@@ -14,7 +14,7 @@ services:
       - "8080:8080"
     environment:
       - LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true
-    restart: always
+    restart: "no"
 
   ocr:
     build: ./ocr
@@ -25,4 +25,4 @@ services:
     # Uncomment and set if you want to expose a port
     # ports:
     #   - "9000:9000"
-    restart: always
+    restart: "no"

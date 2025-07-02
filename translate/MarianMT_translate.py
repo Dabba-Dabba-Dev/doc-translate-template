@@ -27,11 +27,11 @@ print(f"Execution time: {end_time - start_time:.2f} seconds")
 print(f"Peak memory usage: {peak / 1024 / 1024:.2f} MB")
 print("translation:", output)
 
-@app.post("/translate")
-async def translate_text(text: str):
-    inputs = tokenizer(text, return_tensors="pt", padding=True)
-    with torch.no_grad():
-        translated = model.generate(**inputs)
-    output = tokenizer.decode(translated[0], skip_special_tokens=True)
-    return {"translation": output}
+#@app.post("/translate")
+#async def translate_text(text: str):
+#    inputs = tokenizer(text, return_tensors="pt", padding=True)
+#    with torch.no_grad():
+#        translated = model.generate(**inputs)
+#    output = tokenizer.decode(translated[0], skip_special_tokens=True)
+#    return {"translation": output}
 

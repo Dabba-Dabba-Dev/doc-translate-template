@@ -7,5 +7,7 @@ __pycache__/
 *.pyo
 *.pyd
 .env
-ocr/APznzabTslW0F8B-lNrlhK5bsjtgWK5VyQ8weIjU5gczWaAIVD__xqJjUllf9qHoXfhbbqK_wAFFKg1VnBR-BU1UIFFN5kzAYOCKKWahY3P0-yvleEqpau1e9IU3riRQdxgFzBz0GofKZ0I7G19bvI-Jy09FTHxQoUWTX5gOIsS_xTuwerVC9ahgPu6e_page-0001.jpg
-ocr/ffff_page-0001.jpg
+ocr/*.png
+ocr/*.jpg
+ocr/*.pdf
+translate/Screenshot 2025-06-25 224812.png

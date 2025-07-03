@@ -13,6 +13,10 @@ RUN pip install --no-cache-dir ultralytics==8.0.203 --prefer-binary
 RUN pip install --no-cache-dir torch==2.2.0 --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir torchvision==0.17.0 --index-url https://download.pytorch.org/whl/cpu
+RUN pip install --no-cache-dir pdf2image
+
+# Install poppler-utils for pdf2image PDF support
+RUN apt-get update && apt-get install -y poppler-utils && rm -rf /var/lib/apt/lists/*
 
 COPY image_to_text.py .
 

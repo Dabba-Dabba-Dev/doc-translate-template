@@ -4,6 +4,9 @@ import numpy as np
 from typing import List, Dict, Any, Tuple
 from spellchecker import SpellChecker
 import re
+from docx import Document
+from docx.shared import Inches
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
 try:
     from pdf2image import convert_from_path
@@ -20,6 +23,15 @@ class ImageToText:
         }
         # Initialize spell checker
         self.spell = SpellChecker()
+        
+        # Common meaningless patterns for OCR errors
+        self.meaningless_patterns = [
+            r'^([a-zA-Z])\1{2,}$', # Any letter repeated 3+ times
+            r'^[^a-zA-Z0-9\s]+$', # Only special characters
+            r'^[0-9]+[a-zA-Z]{1,2}$', # Numbers followed by 1-2 letters
+            r'^[a-zA-Z]{1,2}[0-9]+$', # 1-2 letters followed by numbers
+        ]
+        
 
     def _preprocess_image(self, img: np.ndarray) -> np.ndarray:
         """Basic image preprocessing for OCR"""
@@ -27,10 +39,32 @@ class ImageToText:
         thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
         return cv2.GaussianBlur(thresh, (3, 3), 0)
 
+    def _is_meaningless_word(self, word: str) -> bool:
+        """Check if a word is likely a meaningless OCR error"""
+        if not word or len(word) < 2:
+            return False
+            
+        # Check against meaningless patterns
+        for pattern in self.meaningless_patterns:
+            if re.match(pattern, word):
+                return True
+        
+        # Check for words with unusual character repetition
+        if len(word) >= 3:
+            char_counts = {}
+            for char in word.lower():
+                char_counts[char] = char_counts.get(char, 0) + 1
+            
+            # If any character appears more than 50% of the time and word is short
+            max_char_ratio = max(char_counts.values()) / len(word)
+            if max_char_ratio > 0.5 and len(word) <= 5:
+                return True
+        
+        return False
+
     def _filter_nonsense_words(self, text: str) -> str:
         """
-        Filter out words that are likely OCR errors or nonsense while preserving formatting
-        and proper nouns/names that might not be in the dictionary.
+        Enhanced filtering focusing on short meaningless words and OCR errors
         """
         lines = text.split('\n')
         cleaned_lines = []
@@ -47,29 +81,39 @@ class ImageToText:
             
             for token in tokens:
                 # Keep non-word tokens as-is (spaces, punctuation)
-                if not token.strip() or not token.isalnum():
+                if not token.strip() or not re.match(r'\w+', token):
                     cleaned_tokens.append(token)
                     continue
-                    
-                # Check if word is valid
+                
+                # Check if word should be kept
                 lower_token = token.lower()
+                
+                
+                # Check if it's a meaningless word
+                if self._is_meaningless_word(token):
+                    cleaned_tokens.append('')  # Remove meaningless words
+                    continue
+                
+                # For other words, apply original logic
                 is_valid = (
-                    len(token) == 1 or  # single letters might be valid
+                    len(token) >= 3 or  # Keep words 3+ characters
                     token.istitle() or  # proper nouns
                     token.isupper() or  # acronyms
                     token in self.spell or  # in dictionary
                     any(char.isdigit() for char in token) or  # alphanumeric
-                    (len(token) > 3 and self.spell.correction(token) != token)  # simple typo
+                    (len(token) > 2 and token.lower() in self.spell)  # check lowercase
                 )
                 
                 if is_valid:
                     cleaned_tokens.append(token)
                 else:
-                    # Replace nonsense words with empty string (remove them)
+                    # Replace nonsense words with empty string
                     cleaned_tokens.append('')
                     
-            # Reconstruct the line while preserving original spacing
+            # Reconstruct the line while cleaning up extra spaces
             cleaned_line = ''.join(cleaned_tokens)
+            # Clean up multiple spaces
+            cleaned_line = re.sub(r'\s+', ' ', cleaned_line)
             cleaned_lines.append(cleaned_line)
             
         return '\n'.join(cleaned_lines)
@@ -204,6 +248,74 @@ class ImageToText:
 
         return "\n".join(lines)
 
+    def _extract_with_layout(self, img: np.ndarray) -> str:
+        """Enhanced version using hOCR for better layout preservation"""
+        try:
+            # Get hOCR output for spatial data
+            hocr = pytesseract.image_to_pdf_or_hocr(
+                self._preprocess_image(img),
+                extension='hocr',
+                config='--psm 6 --oem 3 -c preserve_interword_spaces=1'
+            )
+            
+            # Parse with BeautifulSoup
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(hocr, 'html.parser')
+            
+            # Reconstruct layout
+            output = []
+            for para in soup.find_all(class_='ocr_par'):
+                para_text = []
+                for line in para.find_all(class_='ocr_line'):
+                    line_text = ' '.join(word.get_text() for word in line.find_all(class_='ocrx_word'))
+                    if line_text.strip():
+                        # Add indentation detection
+                        try:
+                            x_coord = int(line['title'].split()[1])
+                            indent = '    ' * (x_coord // 100)  # 100px per indent level
+                            para_text.append(f"{indent}{line_text}")
+                        except (IndexError, ValueError):
+                            para_text.append(line_text)
+                if para_text:
+                    output.append('\n'.join(para_text))
+            
+            return '\n\n'.join(output)
+        except Exception:
+            # Fallback to basic extraction
+            return pytesseract.image_to_string(self._preprocess_image(img), config='--oem 3 --psm 6')
+
+    def save_to_docx(self, text: str, output_path: str, title: str = "OCR Extracted Text"):
+        """Save the extracted text to a DOCX file with proper formatting"""
+        doc = Document()
+        
+        # Add title
+        title_paragraph = doc.add_heading(title, 0)
+        title_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        
+        # Add extracted text
+        paragraphs = text.split('\n\n')
+        for paragraph_text in paragraphs:
+            if paragraph_text.strip():
+                lines = paragraph_text.split('\n')
+                for line in lines:
+                    if line.strip():
+                        p = doc.add_paragraph()
+                        
+                        # Handle bullet points
+                        if line.strip().startswith(('•', '■', '✓', '✗')):
+                            p.style = 'List Bullet'
+                            p.add_run(line.strip()[1:].strip())  # Remove bullet symbol
+                        # Handle indented text
+                        elif line.startswith('    '):
+                            p.paragraph_format.left_indent = Inches(0.5)
+                            p.add_run(line.strip())
+                        else:
+                            p.add_run(line.strip())
+        
+        # Save the document
+        doc.save(output_path)
+        print(f"✅ Document saved to: {output_path}")
+
     def extract_text(self, image_path: str) -> Dict[str, Any]:
         """Main extraction method. Supports image files and PDFs (first page)."""
         # Detect if PDF
@@ -221,11 +333,11 @@ class ImageToText:
             if img is None:
                 raise FileNotFoundError(f"Image file '{image_path}' not found.")
 
-        # Extract text
-        text = pytesseract.image_to_string(self._preprocess_image(img), config='--oem 3 --psm 6')
+        # Extract text with layout preservation
+        text = self._extract_with_layout(img)
 
         # Filter out nonsense words
-        text = self._extract_with_layout(img)
+        text = self._filter_nonsense_words(text)
 
         # Detect bullet points
         bullet_items = self.detect_bullet_points(img)
@@ -235,40 +347,27 @@ class ImageToText:
             "text": text_with_bullets.strip(),
             "bullets": [item['box'] for item in bullet_items]
         }
-    def _extract_with_layout(self, img: np.ndarray) -> str:
-        """Enhanced version using your PDF code's techniques"""
-        # 1. Get hOCR output for spatial data
-        hocr = pytesseract.image_to_pdf_or_hocr(
-            self._preprocess_image(img),
-            extension='hocr',
-            config='--psm 6 --oem 3 -c preserve_interword_spaces=1'
-        )
-        
-        # 2. Parse with BeautifulSoup (like your PDF table parsing)
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(hocr, 'html.parser')
-        
-        # 3. Reconstruct layout (similar to your extract_page_blocks())
-        output = []
-        for para in soup.find_all(class_='ocr_par'):
-            para_text = []
-            for line in para.find_all(class_='ocr_line'):
-                line_text = ' '.join(word.get_text() for word in line.find_all(class_='ocrx_word'))
-                # Add indentation detection like your PDF code
-                x_coord = int(line['title'].split()[1])
-                indent = '    ' * (x_coord // 100)  # 100px per indent level
-                para_text.append(f"{indent}{line_text}")
-            output.append('\n'.join(para_text))
-        
-        return '\n\n'.join(output)
 
-    def process_image(self, image_path: str) -> Dict[str, Any]:
-        return self.extract_text(image_path)
+    def process_image(self, image_path: str, output_docx: str = None) -> Dict[str, Any]:
+        """Process image and optionally save to DOCX"""
+        result = self.extract_text(image_path)
+        
+        # Save to DOCX if output path provided
+        if output_docx:
+            self.save_to_docx(result["text"], output_docx, f"OCR Results - {image_path}")
+        
+        return result
 
 if __name__ == "__main__":
     ocr = ImageToText()
-    result = ocr.process_image('diplome licence allemand.pdf')
+    
+    # Process the image/PDF
+    result = ocr.process_image('Vollmacht  (2).pdf', 'processed_document.docx')
+    
     print("🔍 Extracted Text:\n", result["text"])
-    print("Detected bullet points:", result["bullets"])
+    print("📄 Detected bullet points:", result["bullets"])
+    print("💾 Text also saved to 'processed_document.docx'")
+    
+    # Still save to txt for backup
     with open("output.txt", "w", encoding="utf-8") as f:
         f.write(result["text"])

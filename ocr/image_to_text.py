@@ -32,6 +32,89 @@ class ImageToText:
             r'^[a-zA-Z]{1,2}[0-9]+$', # 1-2 letters followed by numbers
         ]
         
+        # Sentence ending punctuation
+        self.sentence_endings = r'[.!?:;]'
+        
+    def _fix_line_continuations(self, text: str) -> str:
+        lines = [line for line in text.split('\n')]
+        if not lines:
+            return text
+
+        # Define hyphen characters (including soft hyphens and common OCR line-break hyphens)
+        hyphens = {'-', '\u00AD', '–', '—', '‐', '‑'}
+
+        fixed_lines = []
+        i = 0
+
+        while i < len(lines):
+            current_line = lines[i]
+
+            # Skip empty lines (preserve them as-is)
+            if not current_line.strip():
+                fixed_lines.append(current_line)
+                i += 1
+                continue
+
+            # Check if the line ends with a hyphen (ignore trailing spaces)
+            stripped_current = current_line.rstrip()
+            ends_with_hyphen = any(stripped_current.endswith(h) for h in hyphens)
+
+            # Force merge if hyphen is found (no validity checks)
+            if ends_with_hyphen and i + 1 < len(lines):
+                next_line = lines[i + 1]
+                next_stripped = next_line.lstrip()
+
+                if next_stripped:
+                    # Remove the hyphen and merge with the next line's content
+                    before_hyphen = stripped_current[:-1]  # Remove the hyphen
+                    merged_line = before_hyphen + next_stripped  # Force merge
+
+                    # Preserve original indentation of the current line
+                    indent = current_line[:len(current_line) - len(current_line.lstrip())]
+                    current_line = indent + merged_line
+                    i += 1  # Skip the next line since we merged it
+
+            fixed_lines.append(current_line)
+            i += 1
+
+        return '\n'.join(fixed_lines)
+    def _looks_like_valid_word(self, word: str) -> bool:
+        """
+        Basic heuristic to check if a word looks valid
+        """
+        # Check for reasonable vowel/consonant distribution
+        vowels = 'aeiouAEIOU'
+        vowel_count = sum(1 for char in word if char in vowels)
+        consonant_count = sum(1 for char in word if char.isalpha() and char not in vowels)
+        
+        # A word should have at least one vowel and reasonable vowel ratio
+        if vowel_count == 0:
+            return False
+            
+        vowel_ratio = vowel_count / len(word)
+        return 0.1 <= vowel_ratio <= 0.8
+    
+    def _looks_like_new_sentence(self, line: str) -> bool:
+        """
+        Check if a line looks like it starts a new sentence
+        """
+        line = line.strip()
+        if not line:
+            return False
+            
+        # Check if it starts with a capital letter
+        if line[0].isupper():
+            return True
+            
+        # Check if it starts with a bullet point
+        if line.startswith(('•', '■', '✓', '✗', '-', '*')):
+            return True
+            
+        # Check if it starts with a number (numbered list)
+        if re.match(r'^\d+\.', line):
+            return True
+            
+        return False
 
     def _preprocess_image(self, img: np.ndarray) -> np.ndarray:
         """Basic image preprocessing for OCR"""
@@ -87,7 +170,6 @@ class ImageToText:
                 
                 # Check if word should be kept
                 lower_token = token.lower()
-                
                 
                 # Check if it's a meaningless word
                 if self._is_meaningless_word(token):
@@ -336,6 +418,9 @@ class ImageToText:
         # Extract text with layout preservation
         text = self._extract_with_layout(img)
 
+        # NEW: Fix line continuations and hyphenated words
+        text = self._fix_line_continuations(text)
+
         # Filter out nonsense words
         text = self._filter_nonsense_words(text)
 
@@ -362,7 +447,7 @@ if __name__ == "__main__":
     ocr = ImageToText()
     
     # Process the image/PDF
-    result = ocr.process_image('Vollmacht  (2).pdf', 'processed_document.docx')
+    result = ocr.process_image('diplome licence allemand.pdf', 'processed_document.docx')
     
     print("🔍 Extracted Text:\n", result["text"])
     print("📄 Detected bullet points:", result["bullets"])

@@ -1,10 +1,9 @@
 import cv2
 import pytesseract
 import numpy as np
-import glob
-import os
 from typing import List, Dict, Any, Tuple
-import mimetypes
+from spellchecker import SpellChecker
+import re
 
 try:
     from pdf2image import convert_from_path
@@ -13,20 +12,67 @@ except ImportError:
 
 class ImageToText:
     def __init__(self):
-        # ...existing code...
         self.bullet_symbols = {
             'circle': '•',
             'square': '■',
             'check': '✓',
             'cross': '✗'
         }
-        # ...existing code...
+        # Initialize spell checker
+        self.spell = SpellChecker()
 
     def _preprocess_image(self, img: np.ndarray) -> np.ndarray:
         """Basic image preprocessing for OCR"""
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
         return cv2.GaussianBlur(thresh, (3, 3), 0)
+
+    def _filter_nonsense_words(self, text: str) -> str:
+        """
+        Filter out words that are likely OCR errors or nonsense while preserving formatting
+        and proper nouns/names that might not be in the dictionary.
+        """
+        lines = text.split('\n')
+        cleaned_lines = []
+        
+        for line in lines:
+            # Skip empty lines
+            if not line.strip():
+                cleaned_lines.append(line)
+                continue
+                
+            # Split into words and non-words (punctuation, spaces)
+            tokens = re.findall(r'(\w+|\W+)', line)
+            cleaned_tokens = []
+            
+            for token in tokens:
+                # Keep non-word tokens as-is (spaces, punctuation)
+                if not token.strip() or not token.isalnum():
+                    cleaned_tokens.append(token)
+                    continue
+                    
+                # Check if word is valid
+                lower_token = token.lower()
+                is_valid = (
+                    len(token) == 1 or  # single letters might be valid
+                    token.istitle() or  # proper nouns
+                    token.isupper() or  # acronyms
+                    token in self.spell or  # in dictionary
+                    any(char.isdigit() for char in token) or  # alphanumeric
+                    (len(token) > 3 and self.spell.correction(token) != token)  # simple typo
+                )
+                
+                if is_valid:
+                    cleaned_tokens.append(token)
+                else:
+                    # Replace nonsense words with empty string (remove them)
+                    cleaned_tokens.append('')
+                    
+            # Reconstruct the line while preserving original spacing
+            cleaned_line = ''.join(cleaned_tokens)
+            cleaned_lines.append(cleaned_line)
+            
+        return '\n'.join(cleaned_lines)
 
     def _get_text_boxes(self, img: np.ndarray) -> List[Tuple[int, int, int, int]]:
         """Helper to get text boxes from pytesseract"""
@@ -81,14 +127,13 @@ class ImageToText:
         # Detect circles
         circles = cv2.HoughCircles(
             blurred, cv2.HOUGH_GRADIENT, dp=1.2, minDist=20,
-            param1=50, param2=30, minRadius=7, maxRadius=20  # minRadius increased to avoid small letters
+            param1=50, param2=30, minRadius=7, maxRadius=20
         )
         if circles is not None:
             circles = np.round(circles[0, :]).astype("int")
             for (x, y, r) in circles:
                 area = np.pi * r * r
-                # Filter out small circles (likely not bullets)
-                if area > 120:
+                if area > 120:  # Filter out small circles
                     bullet_boxes.append({'box': [x - r, y - r, x + r, y + r], 'type': 'circle'})
 
         # Detect squares using contours
@@ -100,7 +145,6 @@ class ImageToText:
             if len(approx) == 4 and area > 60 and cv2.isContourConvex(approx):
                 x, y, w, h = cv2.boundingRect(approx)
                 aspect = w / h
-                # Filter out small or non-square shapes
                 if 0.8 < aspect < 1.2 and w > 10 and h > 10:
                     bullet_boxes.append({'box': [x, y, x + w, y + h], 'type': 'square'})
 
@@ -113,146 +157,19 @@ class ImageToText:
             for scale in [15, 20, 25]:
                 tpl = cv2.resize(template, (scale, scale), interpolation=cv2.INTER_NEAREST)
                 res = cv2.matchTemplate(thresh, tpl, cv2.TM_CCOEFF_NORMED)
-                loc = np.where(res > 0.7)  # stricter threshold
+                loc = np.where(res > 0.7)
                 for pt in zip(*loc[::-1]):
                     x, y = pt
-                    # Only accept if the region is not too small
                     if scale > 10:
                         bullet_boxes.append({'box': [x, y, x + scale, y + scale], 'type': typ})
 
-        # Remove boxes that overlap with text boxes (likely not bullets)
+        # Remove boxes that overlap with text boxes
         text_boxes = self._get_text_boxes(img)
         filtered = []
         for item in bullet_boxes:
             if not self._overlaps_text(tuple(item['box']), text_boxes, threshold=0.5):
                 filtered.append(item)
         return self._filter_overlapping_boxes(filtered, max_items=None)
-
-    def detect_frames(self, img: np.ndarray) -> List[List[int]]:
-        """Detect rectangular frames using contours"""
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        edged = cv2.Canny(gray, 50, 150)
-        contours, _ = cv2.findContours(edged, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        return [list(cv2.boundingRect(approx)) for cnt in contours 
-                if len(approx := cv2.approxPolyDP(cnt, 0.02 * cv2.arcLength(cnt, True), True)) == 4 
-                and cv2.contourArea(cnt) > 1000]
-
-    def detect_signature_region(self, img: np.ndarray) -> List[List[int]]:
-        """Detect up to 2 signature-like regions using contours, heuristics, and text density filtering"""
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        text_boxes = self._get_text_boxes(img)
-        h, w = img.shape[:2]
-
-        candidates = []
-        for cnt in contours:
-            x, y, cw, ch = cv2.boundingRect(cnt)
-            area = cv2.contourArea(cnt)
-            aspect = cw / max(ch, 1)
-            inkiness = np.sum(thresh[y:y+ch, x:x+cw] == 255) / max(cw * ch, 1)
-            if (ch > 20 and cw > 100 and area > 500 and 2.5 < aspect < 10 and 
-                y > h * 0.6 and inkiness > 0.10 and 
-                not self._overlaps_text((x, y, x+cw, y+ch), text_boxes)):
-                candidates.append((area, [x, y, x + cw, y + ch]))
-
-        candidates.sort(reverse=True)
-        filtered = self._filter_overlapping_boxes([{'box': box} for _, box in candidates], max_items=2)
-        return [item['box'] for item in filtered]
-
-    def detect_round_stamps_and_logos(self, img: np.ndarray) -> List[List[int]]:
-        """Detect up to 2 most color-distinct round stamps/logos, capturing their full shape."""
-        small = cv2.resize(img, (300, 300)) if max(img.shape[:2]) > 400 else img.copy()
-        data = small.reshape((-1, 3)).astype(np.float32)
-        K = 3
-        _, labels, centers = cv2.kmeans(data, K, None, (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0), 3, cv2.KMEANS_PP_CENTERS)
-        centers = np.uint8(centers)
-        bg_color = centers[np.argmax(np.bincount(labels.flatten()))]
-        text_color = centers[np.argmax([np.linalg.norm(c - bg_color) for c in centers if not np.array_equal(c, bg_color)])]
-        diff_bg = np.linalg.norm(img.astype(np.float32) - bg_color, axis=2)
-        diff_text = np.linalg.norm(img.astype(np.float32) - text_color, axis=2)
-        mask = np.logical_and(diff_bg > 60, diff_text > 60).astype(np.uint8) * 255
-        mask = cv2.medianBlur(mask, 7)
-        mask = cv2.dilate(mask, np.ones((7,7), np.uint8), iterations=1)
-
-        try:
-            ocr_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            data = pytesseract.image_to_data(ocr_gray, output_type=pytesseract.Output.DICT, config=r'--oem 3 --psm 6')
-            text_boxes = [(data['left'][i], data['top'][i], data['left'][i]+data['width'][i], data['top'][i]+data['height'][i])
-                          for i, word in enumerate(data['text']) if word.strip()]
-        except Exception:
-            text_boxes = []
-
-        def overlaps_text(x1, y1, x2, y2):
-            for tx1, ty1, tx2, ty2 in text_boxes:
-                ix1, iy1 = max(x1, tx1), max(y1, ty1)
-                ix2, iy2 = min(x2, tx2), min(y2, ty2)
-                iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
-                if iw * ih > 0.2 * (x2 - x1) * (y2 - y1):
-                    return True
-            return False
-
-        cnts, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        stamp_candidates = []
-        for cnt in cnts:
-            area = cv2.contourArea(cnt)
-            if area < 2000:
-                continue
-            (x, y), radius = cv2.minEnclosingCircle(cnt)
-            circularity = area / (np.pi * (radius ** 2)) if radius > 0 else 0
-            if 0.7 < circularity < 1.2 and radius > 35:
-                x1, y1, w, h = cv2.boundingRect(cnt)
-                x2, y2 = x1 + w, y1 + h
-                if overlaps_text(x1, y1, x2, y2):
-                    continue
-                mean_color = cv2.mean(img, mask=cv2.drawContours(np.zeros(mask.shape, np.uint8), [cnt], -1, 255, -1))[:3]
-                dist_bg = np.linalg.norm(np.array(mean_color) - bg_color)
-                dist_text = np.linalg.norm(np.array(mean_color) - text_color)
-                score = dist_bg + dist_text
-                stamp_candidates.append((score, [x1, y1, x2, y2]))
-        stamp_candidates.sort(reverse=True)
-        stamp_boxes = []
-        for _, box in stamp_candidates:
-            if len(stamp_boxes) == 0 or all(
-                box[2] < b[0] or box[0] > b[2] or box[3] < b[1] or box[1] > b[3]
-                for b in stamp_boxes
-            ):
-                stamp_boxes.append(box)
-            if len(stamp_boxes) == 2:
-                break
-        # Fallback to HoughCircles if none found
-        if not stamp_boxes:
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            masked_gray = cv2.bitwise_and(gray, gray, mask=mask)
-            blurred = cv2.medianBlur(masked_gray, 7)
-            h, w = img.shape[:2]
-            circles = cv2.HoughCircles(
-                blurred, cv2.HOUGH_GRADIENT, dp=1.2, minDist=60,
-                param1=60, param2=30, minRadius=40, maxRadius=int(min(h, w) * 0.5)
-            )
-            circle_candidates = []
-            if circles is not None:
-                circles = np.round(circles[0, :]).astype("int")
-                for (x, y, r) in circles:
-                    if r > 35 and x > r and y > r and x < w - r and y < h - r:
-                        x1, y1, x2, y2 = x - r, y - r, x + r, y + r
-                        area = (x2 - x1) * (y2 - y1)
-                        if area > 2000 and not overlaps_text(x1, y1, x2, y2):
-                            mean_color = cv2.mean(img[y1:y2, x1:x2])[:3]
-                            dist_bg = np.linalg.norm(np.array(mean_color) - bg_color)
-                            dist_text = np.linalg.norm(np.array(mean_color) - text_color)
-                            score = dist_bg + dist_text
-                            circle_candidates.append((score, [x1, y1, x2, y2]))
-                circle_candidates.sort(reverse=True)
-                for _, box in circle_candidates:
-                    if len(stamp_boxes) == 0 or all(
-                        box[2] < b[0] or box[0] > b[2] or box[3] < b[1] or box[1] > b[3]
-                        for b in stamp_boxes
-                    ):
-                        stamp_boxes.append(box)
-                    if len(stamp_boxes) == 2:
-                        break
-        return stamp_boxes
 
     def _insert_bullet_points(self, text: str, img: np.ndarray, bullet_items: List[Dict[str, Any]]) -> str:
         """Insert bullet point symbols into the text"""
@@ -287,26 +204,12 @@ class ImageToText:
 
         return "\n".join(lines)
 
-    def _save_regions(self, img: np.ndarray, boxes: List[List[int]], prefix: str):
-        """Save detected regions as images"""
-        # Remove old files
-        for f in glob.glob(f"{prefix}_*.png"):
-            try:
-                os.remove(f)
-            except Exception:
-                pass
-        
-        # Save new regions
-        for i, (x1, y1, x2, y2) in enumerate(boxes, 1):
-            cv2.imwrite(f"{prefix}_{i}.png", img[y1:y2, x1:x2])
-
     def extract_text(self, image_path: str) -> Dict[str, Any]:
         """Main extraction method. Supports image files and PDFs (first page)."""
         # Detect if PDF
         if image_path.lower().endswith('.pdf'):
             if convert_from_path is None:
                 raise ImportError("pdf2image is required for PDF support. Install with 'pip install pdf2image'.")
-            # Use single page (first page) and lower DPI for speed
             pages = convert_from_path(image_path, dpi=150, first_page=1, last_page=1)
             if not pages:
                 raise FileNotFoundError(f"No pages found in PDF '{image_path}'.")
@@ -321,49 +224,51 @@ class ImageToText:
         # Extract text
         text = pytesseract.image_to_string(self._preprocess_image(img), config='--oem 3 --psm 6')
 
-        # Detect elements
+        # Filter out nonsense words
+        text = self._extract_with_layout(img)
+
+        # Detect bullet points
         bullet_items = self.detect_bullet_points(img)
         text_with_bullets = self._insert_bullet_points(text, img, bullet_items)
-        frame_boxes = self.detect_frames(img)
-        signature_boxes = self.detect_signature_region(img)
-        stamp_boxes = self.detect_round_stamps_and_logos(img)
-
-        # Save regions
-        self._save_regions(img, signature_boxes, "signature")
-        self._save_regions(img, stamp_boxes, "stamp")
-
-        # Debug visualization
-        debug_img = img.copy()
-        colors = {'circle': (0, 255, 0), 'square': (0, 128, 255), 
-                 'check': (255, 0, 255), 'cross': (0, 0, 255)}
-        for item in bullet_items:
-            cv2.rectangle(debug_img, tuple(item['box'][:2]), tuple(item['box'][2:4]), 
-                         colors.get(item['type'], (0, 255, 0)), 2)
-        for box in frame_boxes:
-            cv2.rectangle(debug_img, tuple(box[:2]), tuple(box[2:4]), (255, 0, 0), 2)
-        for box in signature_boxes:
-            cv2.rectangle(debug_img, tuple(box[:2]), tuple(box[2:4]), (0, 0, 255), 2)
-        for box in stamp_boxes:
-            cv2.rectangle(debug_img, tuple(box[:2]), tuple(box[2:4]), (255, 0, 255), 2)
-        cv2.imwrite("debug_detected.png", debug_img)
 
         return {
             "text": text_with_bullets.strip(),
-            "bullets": [item['box'] for item in bullet_items],
-            "frames": frame_boxes,
-            "signatures": signature_boxes,
-            "stamps": stamp_boxes
+            "bullets": [item['box'] for item in bullet_items]
         }
+    def _extract_with_layout(self, img: np.ndarray) -> str:
+        """Enhanced version using your PDF code's techniques"""
+        # 1. Get hOCR output for spatial data
+        hocr = pytesseract.image_to_pdf_or_hocr(
+            self._preprocess_image(img),
+            extension='hocr',
+            config='--psm 6 --oem 3 -c preserve_interword_spaces=1'
+        )
+        
+        # 2. Parse with BeautifulSoup (like your PDF table parsing)
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(hocr, 'html.parser')
+        
+        # 3. Reconstruct layout (similar to your extract_page_blocks())
+        output = []
+        for para in soup.find_all(class_='ocr_par'):
+            para_text = []
+            for line in para.find_all(class_='ocr_line'):
+                line_text = ' '.join(word.get_text() for word in line.find_all(class_='ocrx_word'))
+                # Add indentation detection like your PDF code
+                x_coord = int(line['title'].split()[1])
+                indent = '    ' * (x_coord // 100)  # 100px per indent level
+                para_text.append(f"{indent}{line_text}")
+            output.append('\n'.join(para_text))
+        
+        return '\n\n'.join(output)
 
     def process_image(self, image_path: str) -> Dict[str, Any]:
         return self.extract_text(image_path)
 
 if __name__ == "__main__":
     ocr = ImageToText()
-    result = ocr.process_image('Screenshot 2025-07-03 001911.png')
+    result = ocr.process_image('diplome licence allemand.pdf')
     print("🔍 Extracted Text:\n", result["text"])
     print("Detected bullet points:", result["bullets"])
-    print("Detected frames:", result["frames"])
-    print("Detected signatures:", result["signatures"])
-    with open ("output.txt", "w", encoding="utf-8") as f:
+    with open("output.txt", "w", encoding="utf-8") as f:
         f.write(result["text"])

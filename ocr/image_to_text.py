@@ -7,6 +7,7 @@ import re
 from docx import Document
 from docx.shared import Inches
 from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.section import WD_SECTION, WD_ORIENT
 
 try:
     from pdf2image import convert_from_path
@@ -34,6 +35,11 @@ class ImageToText:
         
         # Sentence ending punctuation
         self.sentence_endings = r'[.!?:;]'
+        
+    def _detect_orientation(self, img: np.ndarray) -> str:
+        """Detect if the image/document is landscape or portrait"""
+        height, width = img.shape[:2]
+        return "landscape" if width > height else "portrait"
         
     def _fix_line_continuations(self, text: str) -> str:
         lines = [line for line in text.split('\n')]
@@ -78,22 +84,96 @@ class ImageToText:
             i += 1
 
         return '\n'.join(fixed_lines)
+    
     def _looks_like_valid_word(self, word: str) -> bool:
         """
-        Basic heuristic to check if a word looks valid
+        Basic heuristic to check if a word looks valid based on vowel/consonant ratio.
         """
-        # Check for reasonable vowel/consonant distribution
         vowels = 'aeiouAEIOU'
         vowel_count = sum(1 for char in word if char in vowels)
-        consonant_count = sum(1 for char in word if char.isalpha() and char not in vowels)
         
-        # A word should have at least one vowel and reasonable vowel ratio
         if vowel_count == 0:
             return False
-            
+        
         vowel_ratio = vowel_count / len(word)
         return 0.1 <= vowel_ratio <= 0.8
-    
+
+    def _merge_continuous_sentences(self, lines: List[str]) -> List[str]:
+        """
+        Merge lines with prioritized conditions:
+        1. If current line has only one word -> merge
+        2. If not ending with punctuation AND next starts lowercase -> merge
+        3. If last word uppercase AND next starts uppercase -> merge
+        4. If not ending with punctuation AND next starts uppercase -> merge (lowest priority)
+        """
+        if not lines:
+            return lines
+
+        merged = []
+        i = 0
+
+        while i < len(lines):
+            original_line = lines[i]
+            stripped_line = original_line.strip()
+            
+            if not stripped_line:
+                merged.append(original_line)
+                i += 1
+                continue
+
+            # Initialize conditions
+            ends_with_punct = any(stripped_line.endswith(p) for p in {'.', '!', '?', ':', ';', ')', ']', '}', '"', "'"})
+            has_one_word = len(stripped_line.split()) == 1
+            current_words = stripped_line.split()
+            last_word_upper = bool(current_words) and current_words[-1][0].isupper()
+
+            merged_line = original_line
+
+            while i + 1 < len(lines):
+                next_original = lines[i + 1]
+                next_stripped = next_original.strip()
+                
+                if not next_stripped:
+                    break
+
+                next_starts_lower = next_stripped[0].islower()
+                next_starts_upper = next_stripped[0].isupper()
+
+                # Check conditions in priority order
+                if has_one_word:
+                    # Highest priority - single word lines always merge
+                    should_merge = True
+                elif not ends_with_punct and next_starts_lower:
+                    # Second priority - standard sentence continuation
+                    should_merge = True
+                elif last_word_upper and next_starts_upper:
+                    # Third priority - uppercase sequences
+                    should_merge = True
+                elif not ends_with_punct and next_starts_upper:
+                    # Lowest priority - uppercase after non-punctuation
+                    should_merge = True
+                else:
+                    should_merge = False
+
+                if should_merge:
+                    # Merge with exactly one space
+                    merged_line = merged_line.rstrip() + ' ' + next_stripped
+                    i += 1
+                    
+                    # Update conditions for next iteration
+                    stripped_line = merged_line.strip()
+                    ends_with_punct = any(stripped_line.endswith(p) for p in {'.', '!', '?', ':', ';', ')', ']', '}', '"', "'"})
+                    has_one_word = False
+                    current_words = stripped_line.split()
+                    last_word_upper = bool(current_words) and current_words[-1][0].isupper()
+                else:
+                    break
+
+            merged.append(merged_line)
+            i += 1
+
+        return merged
+
     def _looks_like_new_sentence(self, line: str) -> bool:
         """
         Check if a line looks like it starts a new sentence
@@ -153,11 +233,15 @@ class ImageToText:
         cleaned_lines = []
         
         for line in lines:
-            # Skip empty lines
-            if not line.strip():
-                cleaned_lines.append(line)
+            stripped_line = line.strip()
+            # Skip lines that are:
+            # 1. Empty, OR
+            # 2. Single non-alphanumeric character (like |, /), OR
+            # 3. Single character that's not a meaningful word (like "a", "I" are kept)
+            if (not stripped_line or 
+                (len(stripped_line) == 1 and not stripped_line.isalnum()) or
+                (len(stripped_line) == 1 and stripped_line.isalpha() and stripped_line.lower() not in {'a', 'i'})):
                 continue
-                
             # Split into words and non-words (punctuation, spaces)
             tokens = re.findall(r'(\w+|\W+)', line)
             cleaned_tokens = []
@@ -330,73 +414,107 @@ class ImageToText:
 
         return "\n".join(lines)
 
-    def _extract_with_layout(self, img: np.ndarray) -> str:
-        """Enhanced version using hOCR for better layout preservation"""
+    def _extract_with_layout_improved(self, img: np.ndarray) -> str:
         try:
-            # Get hOCR output for spatial data
-            hocr = pytesseract.image_to_pdf_or_hocr(
-                self._preprocess_image(img),
-                extension='hocr',
-                config='--psm 6 --oem 3 -c preserve_interword_spaces=1'
+            processed = self._preprocess_image(img)
+            data = pytesseract.image_to_data(
+                processed,
+                output_type=pytesseract.Output.DICT,
+                config='--oem 3 --psm 6 -c preserve_interword_spaces=1'
             )
             
-            # Parse with BeautifulSoup
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(hocr, 'html.parser')
+            # Dictionary to hold lines {y_position: [words]}
+            lines = {}
             
-            # Reconstruct layout
-            output = []
-            for para in soup.find_all(class_='ocr_par'):
-                para_text = []
-                for line in para.find_all(class_='ocr_line'):
-                    line_text = ' '.join(word.get_text() for word in line.find_all(class_='ocrx_word'))
-                    if line_text.strip():
-                        # Add indentation detection
-                        try:
-                            x_coord = int(line['title'].split()[1])
-                            indent = '    ' * (x_coord // 100)  # 100px per indent level
-                            para_text.append(f"{indent}{line_text}")
-                        except (IndexError, ValueError):
-                            para_text.append(line_text)
-                if para_text:
-                    output.append('\n'.join(para_text))
-            
-            return '\n\n'.join(output)
-        except Exception:
-            # Fallback to basic extraction
-            return pytesseract.image_to_string(self._preprocess_image(img), config='--oem 3 --psm 6')
+            for i in range(len(data['text'])):
+                if data['text'][i].strip():
+                    y_pos = data['top'][i]
+                    line_key = y_pos // 10  # Group words into lines (adjust 10 as needed)
+                    
+                    if line_key not in lines:
+                        lines[line_key] = []
+                    
+                    lines[line_key].append({
+                        'text': data['text'][i],
+                        'left': data['left'][i],
+                        'width': data['width'][i]
+                    })
 
-    def save_to_docx(self, text: str, output_path: str, title: str = "OCR Extracted Text"):
-        """Save the extracted text to a DOCX file with proper formatting"""
+            # Sort lines by vertical position
+            sorted_lines = sorted(lines.items(), key=lambda x: x[0])
+            
+            output_lines = []
+            for line_key, words in sorted_lines:
+                # Sort words horizontally
+                words.sort(key=lambda x: x['left'])
+                
+                # Calculate indentation (first word's position)
+                if words:
+                    first_word_pos = words[0]['left']
+                    indent_spaces = first_word_pos // 10  # Convert pixels to spaces
+                    
+                    # Build the line
+                    line_text = ' ' * indent_spaces
+                    prev_end = first_word_pos
+                    
+                    for word in words:
+                        # Add spacing between words
+                        gap = word['left'] - prev_end
+                        if gap > 5:  # Only add spaces if significant gap
+                            line_text += ' ' * max(1, gap // 10)
+                        line_text += word['text']
+                        prev_end = word['left'] + word['width']
+                    
+                    output_lines.append(line_text)
+
+            return '\n'.join(output_lines)
+            
+        except Exception as e:
+            print(f"Layout extraction failed: {e}")
+            return pytesseract.image_to_string(img, config='--oem 3 --psm 6')
+    def save_to_docx(self, text: str, output_path: str,  orientation: str = "portrait"):
+        """Save the extracted text to a DOCX file with proper formatting and orientation"""
         doc = Document()
         
-        # Add title
-        title_paragraph = doc.add_heading(title, 0)
-        title_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        # Set page orientation
+        section = doc.sections[0]
+        if orientation == "landscape":
+            section.orientation = WD_ORIENT.LANDSCAPE
+            # Swap width and height for landscape
+            section.page_width, section.page_height = section.page_height, section.page_width
         
-        # Add extracted text
-        paragraphs = text.split('\n\n')
-        for paragraph_text in paragraphs:
-            if paragraph_text.strip():
-                lines = paragraph_text.split('\n')
-                for line in lines:
-                    if line.strip():
-                        p = doc.add_paragraph()
-                        
-                        # Handle bullet points
-                        if line.strip().startswith(('•', '■', '✓', '✗')):
-                            p.style = 'List Bullet'
-                            p.add_run(line.strip()[1:].strip())  # Remove bullet symbol
-                        # Handle indented text
-                        elif line.startswith('    '):
-                            p.paragraph_format.left_indent = Inches(0.5)
-                            p.add_run(line.strip())
-                        else:
-                            p.add_run(line.strip())
+        
+        # Add extracted text with preserved spacing
+        lines = text.split('\n')
+        for line in lines:
+            # Handle empty lines
+            if not line.strip():
+                doc.add_paragraph()
+                continue
+            
+            # Create paragraph
+            p = doc.add_paragraph()
+            
+            # Handle bullet points
+            if line.strip().startswith(('•', '■', '✓', '✗')):
+                p.style = 'List Bullet'
+                p.add_run(line.strip()[1:].strip())  # Remove bullet symbol
+            else:
+                # Calculate indentation from leading spaces
+                stripped_line = line.lstrip()
+                leading_spaces = len(line) - len(stripped_line)
+                
+                # Set indentation (each 4 spaces = 0.25 inch)
+                if leading_spaces > 0:
+                    indent_inches = (leading_spaces / 4) * 0.25
+                    p.paragraph_format.left_indent = Inches(indent_inches)
+                
+                # Add the text, preserving internal spacing
+                p.add_run(stripped_line)
         
         # Save the document
         doc.save(output_path)
-        print(f"✅ Document saved to: {output_path}")
+        print(f"✅ Document saved to: {output_path} (Orientation: {orientation})")
 
     def extract_text(self, image_path: str) -> Dict[str, Any]:
         """Main extraction method. Supports image files and PDFs (first page)."""
@@ -415,10 +533,13 @@ class ImageToText:
             if img is None:
                 raise FileNotFoundError(f"Image file '{image_path}' not found.")
 
-        # Extract text with layout preservation
-        text = self._extract_with_layout(img)
+        # Detect orientation
+        orientation = self._detect_orientation(img)
 
-        # NEW: Fix line continuations and hyphenated words
+        # Extract text with improved layout preservation
+        text = self._extract_with_layout_improved(img)
+
+        # Fix line continuations and hyphenated words
         text = self._fix_line_continuations(text)
 
         # Filter out nonsense words
@@ -430,7 +551,8 @@ class ImageToText:
 
         return {
             "text": text_with_bullets.strip(),
-            "bullets": [item['box'] for item in bullet_items]
+            "bullets": [item['box'] for item in bullet_items],
+            "orientation": orientation
         }
 
     def process_image(self, image_path: str, output_docx: str = None) -> Dict[str, Any]:
@@ -439,18 +561,23 @@ class ImageToText:
         
         # Save to DOCX if output path provided
         if output_docx:
-            self.save_to_docx(result["text"], output_docx, f"OCR Results - {image_path}")
+            self.save_to_docx(
+                result["text"], 
+                output_docx, 
+                result["orientation"]
+            )
         
         return result
-
+    
 if __name__ == "__main__":
     ocr = ImageToText()
     
     # Process the image/PDF
-    result = ocr.process_image('diplome licence allemand.pdf', 'processed_document.docx')
+    result = ocr.process_image('Screenshot 2025-07-06 095609.png', 'processed_document.docx')
     
     print("🔍 Extracted Text:\n", result["text"])
     print("📄 Detected bullet points:", result["bullets"])
+    print("🔄 Document orientation:", result["orientation"])
     print("💾 Text also saved to 'processed_document.docx'")
     
     # Still save to txt for backup

@@ -1,203 +1,27 @@
 import cv2
 import pytesseract
+import requests
 import numpy as np
+import re
 from typing import List, Dict, Any, Tuple
 from spellchecker import SpellChecker
-import re
-from docx import Document
-from docx.shared import Inches
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from docx.enum.section import WD_SECTION, WD_ORIENT
 
-try:
-    from pdf2image import convert_from_path
-except ImportError:
-    convert_from_path = None
-
-class ImageToText:
+class EnhancedOCR:
     def __init__(self):
-        self.bullet_symbols = {
-            'circle': '•',
-            'square': '■',
-            'check': '✓',
-            'cross': '✗'
-        }
         # Initialize spell checker
         self.spell = SpellChecker()
         
         # Common meaningless patterns for OCR errors
         self.meaningless_patterns = [
-            r'^([a-zA-Z])\1{2,}$', # Any letter repeated 3+ times
-            r'^[^a-zA-Z0-9\s]+$', # Only special characters
-            r'^[0-9]+[a-zA-Z]{1,2}$', # Numbers followed by 1-2 letters
-            r'^[a-zA-Z]{1,2}[0-9]+$', # 1-2 letters followed by numbers
+            r'^([a-zA-Z])\1{2,}$',  # Any letter repeated 3+ times
+            r'^[^a-zA-Z0-9\s]+$',   # Only special characters
         ]
         
         # Sentence ending punctuation
         self.sentence_endings = r'[.!?:;]'
         
-    def _detect_orientation(self, img: np.ndarray) -> str:
-        """Detect if the image/document is landscape or portrait"""
-        height, width = img.shape[:2]
-        return "landscape" if width > height else "portrait"
-        
-    def _fix_line_continuations(self, text: str) -> str:
-        lines = [line for line in text.split('\n')]
-        if not lines:
-            return text
-
-        # Define hyphen characters (including soft hyphens and common OCR line-break hyphens)
-        hyphens = {'-', '\u00AD', '–', '—', '‐', '‑'}
-
-        fixed_lines = []
-        i = 0
-
-        while i < len(lines):
-            current_line = lines[i]
-
-            # Skip empty lines (preserve them as-is)
-            if not current_line.strip():
-                fixed_lines.append(current_line)
-                i += 1
-                continue
-
-            # Check if the line ends with a hyphen (ignore trailing spaces)
-            stripped_current = current_line.rstrip()
-            ends_with_hyphen = any(stripped_current.endswith(h) for h in hyphens)
-
-            # Force merge if hyphen is found (no validity checks)
-            if ends_with_hyphen and i + 1 < len(lines):
-                next_line = lines[i + 1]
-                next_stripped = next_line.lstrip()
-
-                if next_stripped:
-                    # Remove the hyphen and merge with the next line's content
-                    before_hyphen = stripped_current[:-1]  # Remove the hyphen
-                    merged_line = before_hyphen + next_stripped  # Force merge
-
-                    # Preserve original indentation of the current line
-                    indent = current_line[:len(current_line) - len(current_line.lstrip())]
-                    current_line = indent + merged_line
-                    i += 1  # Skip the next line since we merged it
-
-            fixed_lines.append(current_line)
-            i += 1
-
-        return '\n'.join(fixed_lines)
-    
-    def _looks_like_valid_word(self, word: str) -> bool:
-        """
-        Basic heuristic to check if a word looks valid based on vowel/consonant ratio.
-        """
-        vowels = 'aeiouAEIOU'
-        vowel_count = sum(1 for char in word if char in vowels)
-        
-        if vowel_count == 0:
-            return False
-        
-        vowel_ratio = vowel_count / len(word)
-        return 0.1 <= vowel_ratio <= 0.8
-
-    def _merge_continuous_sentences(self, lines: List[str]) -> List[str]:
-        """
-        Merge lines with prioritized conditions:
-        1. If current line has only one word -> merge
-        2. If not ending with punctuation AND next starts lowercase -> merge
-        3. If last word uppercase AND next starts uppercase -> merge
-        4. If not ending with punctuation AND next starts uppercase -> merge (lowest priority)
-        """
-        if not lines:
-            return lines
-
-        merged = []
-        i = 0
-
-        while i < len(lines):
-            original_line = lines[i]
-            stripped_line = original_line.strip()
-            
-            if not stripped_line:
-                merged.append(original_line)
-                i += 1
-                continue
-
-            # Initialize conditions
-            ends_with_punct = any(stripped_line.endswith(p) for p in {'.', '!', '?', ':', ';', ')', ']', '}', '"', "'"})
-            has_one_word = len(stripped_line.split()) == 1
-            current_words = stripped_line.split()
-            last_word_upper = bool(current_words) and current_words[-1][0].isupper()
-
-            merged_line = original_line
-
-            while i + 1 < len(lines):
-                next_original = lines[i + 1]
-                next_stripped = next_original.strip()
-                
-                if not next_stripped:
-                    break
-
-                next_starts_lower = next_stripped[0].islower()
-                next_starts_upper = next_stripped[0].isupper()
-
-                # Check conditions in priority order
-                if has_one_word:
-                    # Highest priority - single word lines always merge
-                    should_merge = True
-                elif not ends_with_punct and next_starts_lower:
-                    # Second priority - standard sentence continuation
-                    should_merge = True
-                elif last_word_upper and next_starts_upper:
-                    # Third priority - uppercase sequences
-                    should_merge = True
-                elif not ends_with_punct and next_starts_upper:
-                    # Lowest priority - uppercase after non-punctuation
-                    should_merge = True
-                else:
-                    should_merge = False
-
-                if should_merge:
-                    # Merge with exactly one space
-                    merged_line = merged_line.rstrip() + ' ' + next_stripped
-                    i += 1
-                    
-                    # Update conditions for next iteration
-                    stripped_line = merged_line.strip()
-                    ends_with_punct = any(stripped_line.endswith(p) for p in {'.', '!', '?', ':', ';', ')', ']', '}', '"', "'"})
-                    has_one_word = False
-                    current_words = stripped_line.split()
-                    last_word_upper = bool(current_words) and current_words[-1][0].isupper()
-                else:
-                    break
-
-            merged.append(merged_line)
-            i += 1
-
-        return merged
-
-    def _looks_like_new_sentence(self, line: str) -> bool:
-        """
-        Check if a line looks like it starts a new sentence
-        """
-        line = line.strip()
-        if not line:
-            return False
-            
-        # Check if it starts with a capital letter
-        if line[0].isupper():
-            return True
-            
-        # Check if it starts with a bullet point
-        if line.startswith(('•', '■', '✓', '✗', '-', '*')):
-            return True
-            
-        # Check if it starts with a number (numbered list)
-        if re.match(r'^\d+\.', line):
-            return True
-            
-        return False
-
     def _preprocess_image(self, img: np.ndarray) -> np.ndarray:
-        """Basic image preprocessing for OCR"""
+        """Basic image preprocessing for OCR (from reference code)"""
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
         return cv2.GaussianBlur(thresh, (3, 3), 0)
@@ -228,193 +52,73 @@ class ImageToText:
     def _filter_nonsense_words(self, text: str) -> str:
         """
         Enhanced filtering focusing on short meaningless words and OCR errors
+        while preserving EXACT original spacing and indentation.
         """
         lines = text.split('\n')
         cleaned_lines = []
         
         for line in lines:
-            stripped_line = line.strip()
-            # Skip lines that are:
-            # 1. Empty, OR
-            # 2. Single non-alphanumeric character (like |, /), OR
-            # 3. Single character that's not a meaningful word (like "a", "I" are kept)
-            if (not stripped_line or 
-                (len(stripped_line) == 1 and not stripped_line.isalnum()) or
-                (len(stripped_line) == 1 and stripped_line.isalpha() and stripped_line.lower() not in {'a', 'i'})):
+            # Skip completely empty lines (preserve newlines)
+            if not line.strip():
+                cleaned_lines.append(line)
                 continue
-            # Split into words and non-words (punctuation, spaces)
-            tokens = re.findall(r'(\w+|\W+)', line)
-            cleaned_tokens = []
+                
+            # Track original character positions
+            cleaned_chars = []
+            i = 0
+            n = len(line)
             
-            for token in tokens:
-                # Keep non-word tokens as-is (spaces, punctuation)
-                if not token.strip() or not re.match(r'\w+', token):
-                    cleaned_tokens.append(token)
+            while i < n:
+                # Handle non-word characters (spaces, punctuation)
+                if not line[i].isalnum():
+                    cleaned_chars.append(line[i])
+                    i += 1
                     continue
+                    
+                # Extract full word starting at position i
+                word_start = i
+                while i < n and line[i].isalnum():
+                    i += 1
+                word = line[word_start:i]
                 
                 # Check if word should be kept
-                lower_token = token.lower()
-                
-                # Check if it's a meaningless word
-                if self._is_meaningless_word(token):
-                    cleaned_tokens.append('')  # Remove meaningless words
-                    continue
-                
-                # For other words, apply original logic
-                is_valid = (
-                    len(token) >= 3 or  # Keep words 3+ characters
-                    token.istitle() or  # proper nouns
-                    token.isupper() or  # acronyms
-                    token in self.spell or  # in dictionary
-                    any(char.isdigit() for char in token) or  # alphanumeric
-                    (len(token) > 2 and token.lower() in self.spell)  # check lowercase
-                )
-                
-                if is_valid:
-                    cleaned_tokens.append(token)
-                else:
-                    # Replace nonsense words with empty string
-                    cleaned_tokens.append('')
+                keep_word = False
+                if word:  # Only process if we actually found a word
+                    lower_word = word.lower()
                     
-            # Reconstruct the line while cleaning up extra spaces
-            cleaned_line = ''.join(cleaned_tokens)
-            # Clean up multiple spaces
-            cleaned_line = re.sub(r'\s+', ' ', cleaned_line)
+                    # Check if it's a meaningful word
+                    if not self._is_meaningless_word(word):
+                        keep_word = (
+                            len(word) >= 3 or
+                            word.istitle() or
+                            word.isupper() or
+                            word in self.spell or
+                            any(char.isdigit() for char in word) or
+                            (len(word) > 2 and lower_word in self.spell)
+                        )
+                
+                # Preserve either the word or its original spacing
+                if keep_word:
+                    cleaned_chars.append(word)
+                else:
+                    # Replace word with empty string BUT PRESERVE POSITION
+                    # This maintains alignment of surrounding text
+                    cleaned_chars.append(' ' * len(word) if line[word_start].isspace() else '')
+                    
+            # Reconstruct line exactly with original spacing
+            cleaned_line = ''.join(cleaned_chars)
+            
+            # Only clean redundant spaces if they're not part of indentation
+            if cleaned_line.strip():
+                # Collapse only MID-LINE multiple spaces
+                cleaned_line = re.sub(r'(?<=\S)\s+(?=\S)', ' ', cleaned_line)
+            
             cleaned_lines.append(cleaned_line)
             
         return '\n'.join(cleaned_lines)
 
-    def _get_text_boxes(self, img: np.ndarray) -> List[Tuple[int, int, int, int]]:
-        """Helper to get text boxes from pytesseract"""
-        try:
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            data = pytesseract.image_to_data(gray, output_type=pytesseract.Output.DICT, config='--oem 3 --psm 6')
-            return [(data['left'][i], data['top'][i], 
-                     data['left'][i] + data['width'][i], 
-                     data['top'][i] + data['height'][i]) 
-                    for i, word in enumerate(data['text']) if word.strip()]
-        except Exception:
-            return []
-
-    def _overlaps_text(self, box: Tuple[int, int, int, int], 
-                      text_boxes: List[Tuple[int, int, int, int]], 
-                      threshold: float = 0.3) -> bool:
-        """Check if box overlaps with text regions"""
-        x1, y1, x2, y2 = box
-        for tx1, ty1, tx2, ty2 in text_boxes:
-            ix1, iy1 = max(x1, tx1), max(y1, ty1)
-            ix2, iy2 = min(x2, tx2), min(y2, ty2)
-            iw, ih = max(0, ix2 - ix1), max(0, iy2 - iy1)
-            if iw * ih > threshold * (x2 - x1) * (y2 - y1):
-                return True
-        return False
-
-    def _filter_overlapping_boxes(self, boxes: List[Dict[str, Any]], max_items: int = 2) -> List[Dict[str, Any]]:
-        """Filter overlapping boxes keeping the largest ones"""
-        def overlap(a, b):
-            return not (a[2] < b[0] or a[0] > b[2] or a[3] < b[1] or a[1] > b[3])
-
-        filtered = []
-        for i, item in enumerate(boxes):
-            keep = True
-            for j, other in enumerate(boxes):
-                if i != j and overlap(item['box'], other['box']):
-                    a_area = (item['box'][2]-item['box'][0])*(item['box'][3]-item['box'][1])
-                    b_area = (other['box'][2]-other['box'][0])*(other['box'][3]-other['box'][1])
-                    if a_area < b_area:
-                        keep = False
-                        break
-            if keep and (max_items is None or len(filtered) < max_items):
-                filtered.append(item)
-        return filtered
-
-    def detect_bullet_points(self, img: np.ndarray) -> List[Dict[str, Any]]:
-        """Detect circular, square, check, and cross bullet points"""
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        blurred = cv2.medianBlur(gray, 5)
-        bullet_boxes = []
-
-        # Detect circles
-        circles = cv2.HoughCircles(
-            blurred, cv2.HOUGH_GRADIENT, dp=1.2, minDist=20,
-            param1=50, param2=30, minRadius=7, maxRadius=20
-        )
-        if circles is not None:
-            circles = np.round(circles[0, :]).astype("int")
-            for (x, y, r) in circles:
-                area = np.pi * r * r
-                if area > 120:  # Filter out small circles
-                    bullet_boxes.append({'box': [x - r, y - r, x + r, y + r], 'type': 'circle'})
-
-        # Detect squares using contours
-        _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-        contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        for cnt in contours:
-            approx = cv2.approxPolyDP(cnt, 0.04 * cv2.arcLength(cnt, True), True)
-            area = cv2.contourArea(cnt)
-            if len(approx) == 4 and area > 60 and cv2.isContourConvex(approx):
-                x, y, w, h = cv2.boundingRect(approx)
-                aspect = w / h
-                if 0.8 < aspect < 1.2 and w > 10 and h > 10:
-                    bullet_boxes.append({'box': [x, y, x + w, y + h], 'type': 'square'})
-
-        # Detect check marks and crosses using template matching
-        templates = [
-            ('check', np.array([[0,0,1,0,0], [0,1,0,0,0], [1,0,0,0,0], [0,1,0,0,0], [0,0,1,0,0]], dtype=np.uint8) * 255),
-            ('cross', np.array([[1,0,0,0,1], [0,1,0,1,0], [0,0,1,0,0], [0,1,0,1,0], [1,0,0,0,1]], dtype=np.uint8) * 255)
-        ]
-        for typ, template in templates:
-            for scale in [15, 20, 25]:
-                tpl = cv2.resize(template, (scale, scale), interpolation=cv2.INTER_NEAREST)
-                res = cv2.matchTemplate(thresh, tpl, cv2.TM_CCOEFF_NORMED)
-                loc = np.where(res > 0.7)
-                for pt in zip(*loc[::-1]):
-                    x, y = pt
-                    if scale > 10:
-                        bullet_boxes.append({'box': [x, y, x + scale, y + scale], 'type': typ})
-
-        # Remove boxes that overlap with text boxes
-        text_boxes = self._get_text_boxes(img)
-        filtered = []
-        for item in bullet_boxes:
-            if not self._overlaps_text(tuple(item['box']), text_boxes, threshold=0.5):
-                filtered.append(item)
-        return self._filter_overlapping_boxes(filtered, max_items=None)
-
-    def _insert_bullet_points(self, text: str, img: np.ndarray, bullet_items: List[Dict[str, Any]]) -> str:
-        """Insert bullet point symbols into the text"""
-        lines = text.splitlines()
-        h, _ = img.shape[:2]
-        
-        # Get line positions from OCR data or estimate
-        try:
-            processed = self._preprocess_image(img)
-            data = pytesseract.image_to_data(processed, output_type=pytesseract.Output.DICT, config='--oem 3 --psm 6')
-            line_positions = []
-            for i, word in enumerate(data['text']):
-                if word.strip() and (not line_positions or abs(data['top'][i] - line_positions[-1]) > 10):
-                    line_positions.append(data['top'][i])
-        except Exception:
-            line_positions = [int(h * i / max(1, len(lines))) for i in range(len(lines))]
-
-        # Map bullets to lines
-        bullet_lines = {}
-        for item in bullet_items:
-            x1, y1, x2, y2 = item['box']
-            bullet_y = (y1 + y2) // 2
-            closest_line = min(enumerate(line_positions), key=lambda x: abs(x[1] - bullet_y), default=(0, 0))[0]
-            bullet_lines[closest_line] = item['type']
-
-        # Insert bullet symbols
-        for idx, typ in bullet_lines.items():
-            if 0 <= idx < len(lines):
-                symbol = self.bullet_symbols.get(typ, '•')
-                if not lines[idx].strip().startswith(symbol):
-                    lines[idx] = f"{symbol} " + lines[idx].lstrip()
-
-        return "\n".join(lines)
-
     def _extract_with_layout_improved(self, img: np.ndarray) -> str:
+        """Extract text with improved layout preservation (from reference code)"""
         try:
             processed = self._preprocess_image(img)
             data = pytesseract.image_to_data(
@@ -472,114 +176,302 @@ class ImageToText:
         except Exception as e:
             print(f"Layout extraction failed: {e}")
             return pytesseract.image_to_string(img, config='--oem 3 --psm 6')
-    def save_to_docx(self, text: str, output_path: str,  orientation: str = "portrait"):
-        """Save the extracted text to a DOCX file with proper formatting and orientation"""
-        doc = Document()
+
+    def _fix_line_continuations(self, text: str) -> Tuple[str, int]:
+        """Fix line continuations with hyphenated words and tracking"""
+        lines = [line for line in text.split('\n') if line.strip()]
+        if not lines:
+            return text, 0
+
+        hyphens = {'-', '\u00AD', '–', '—', '‐', '‑', '~'}
+        continuation_count = 0
+
+        fixed_lines = []
+        i = 0
+
+        while i < len(lines):
+            current_line = lines[i].rstrip()
+            
+            if not current_line:
+                fixed_lines.append(lines[i])
+                i += 1
+                continue
+
+            # Check for hyphen at end (ignore trailing spaces)
+            stripped_current = current_line.rstrip()
+            ends_with_hyphen = any(stripped_current.endswith(h) for h in hyphens)
+            
+            # Also check for comma continuation
+            ends_with_comma = stripped_current.endswith(',')
+            
+            # Check if next line starts lowercase
+            starts_lower = (i + 1 < len(lines) and 
+                        lines[i+1].strip() and 
+                        lines[i+1].strip()[0].islower())
+
+            if (ends_with_hyphen or ends_with_comma or starts_lower) and i + 1 < len(lines):
+                next_line = lines[i+1].lstrip()
+                if next_line:
+                    # Count this continuation
+                    continuation_count += 1
+                    
+                    # Remove the hyphen if present
+                    if ends_with_hyphen:
+                        before_hyphen = stripped_current[:-1]
+                    else:
+                        before_hyphen = stripped_current
+                    
+                    # Merge with next line
+                    merged_line = before_hyphen + ' ' + next_line
+                    fixed_lines.append(merged_line)
+                    i += 2  # Skip next line
+                    continue
+
+            fixed_lines.append(lines[i])
+            i += 1
+
+        return '\n'.join(fixed_lines), continuation_count
+
+    def _merge_continuous_sentences(self, lines: List[str]) -> Tuple[List[str], int]:
+        """Merge continuous sentences with tracking"""
+        if not lines:
+            return lines, 0
+
+        merged = []
+        merge_count = 0
+        i = 0
+
+        while i < len(lines):
+            current_line = lines[i].strip()
+            
+            if not current_line:
+                merged.append(lines[i])
+                i += 1
+                continue
+
+            merged_line = lines[i]  # Preserve original formatting
+            original_i = i
+
+            while i + 1 < len(lines):
+                next_line = lines[i + 1].strip()
+                
+                if not next_line:
+                    break
+
+                # Enhanced merging conditions
+                should_merge = self._should_merge_lines(merged_line, next_line)
+                
+                if should_merge:
+                    merge_count += 1
+                    original_indent = len(lines[i]) - len(lines[i].lstrip())
+                    merged_line = lines[i][:original_indent] + lines[i].lstrip() + ' ' + next_line
+                    i += 1
+                else:
+                    break
+
+            merged.append(merged_line)
+            if i == original_i:  # Only advance if no merge occurred
+                i += 1
+
+        return merged, merge_count
+
+    def _should_merge_lines(self, current_line: str, next_line: str) -> bool:
+        """Determine if two lines should be merged"""
+        current_stripped = current_line.strip()
+        next_stripped = next_line.strip()
         
-        # Set page orientation
-        section = doc.sections[0]
-        if orientation == "landscape":
-            section.orientation = WD_ORIENT.LANDSCAPE
-            # Swap width and height for landscape
-            section.page_width, section.page_height = section.page_height, section.page_width
-        
-        
-        # Add extracted text with preserved spacing
+        if not current_stripped or not next_stripped:
+            return False
+
+        # Current line conditions
+        ends_with_punct = any(current_stripped.endswith(p) for p in {'.', '!', '?', ':', ';', ',', ')', ']', '}', '"', "'"})
+        has_few_words = len(current_stripped.split()) <= 2
+        current_words = current_stripped.split()
+        last_word_upper = bool(current_words) and current_words[-1][0].isupper()
+        last_word_short = bool(current_words) and len(current_words[-1]) <= 3
+
+        # Next line conditions
+        next_starts_lower = next_stripped[0].islower()
+        next_starts_upper = next_stripped[0].isupper()
+        next_short = len(next_stripped.split()) <= 3
+        next_starts_with_article = next_stripped.lower().startswith(('the ', 'a ', 'an ', 'this ', 'that '))
+
+        # Merge conditions
+        return (
+            has_few_words or
+            (not ends_with_punct and next_starts_lower) or
+            (last_word_upper and next_starts_upper) or
+            (last_word_short and next_starts_lower) or
+            (ends_with_punct and next_starts_with_article) or
+            (current_stripped.endswith(',') and next_starts_lower)
+        )
+
+    def _post_process_text(self, text: str) -> str:
+        """Final cleanup of merged text"""
+        # Fix common OCR errors
+        text = re.sub(r'(\w)-\s+(\w)', r'\1\2', text)  # Fix space-after-hyphen
+        text = re.sub(r'\s+([.,;:!?])', r'\1', text)  # Remove space before punctuation
+        text = re.sub(r'([a-zA-Z])\s+-\s+([a-zA-Z])', r'\1-\2', text)  # Fix spaced hyphens
+        return text
+
+    def _analyze_text_alignment(self, text: str) -> str:
+        """Analyze and adjust text alignment based on spacing patterns"""
         lines = text.split('\n')
+        if not lines:
+            return text
+        
+        # Analyze indentation patterns
+        line_indents = []
         for line in lines:
-            # Handle empty lines
+            if line.strip():  # Only non-empty lines
+                indent = len(line) - len(line.lstrip())
+                line_indents.append(indent)
+        
+        if not line_indents:
+            return text
+        
+        # Find common indentation levels
+        unique_indents = list(set(line_indents))
+        unique_indents.sort()
+        
+        # Determine if text appears to be centered or left-aligned
+        avg_indent = sum(line_indents) / len(line_indents)
+        max_indent = max(line_indents)
+        
+        processed_lines = []
+        for line in lines:
             if not line.strip():
-                doc.add_paragraph()
+                processed_lines.append('')
                 continue
             
-            # Create paragraph
-            p = doc.add_paragraph()
+            current_indent = len(line) - len(line.lstrip())
+            content = line.strip()
             
-            # Handle bullet points
-            if line.strip().startswith(('•', '■', '✓', '✗')):
-                p.style = 'List Bullet'
-                p.add_run(line.strip()[1:].strip())  # Remove bullet symbol
+            # Apply alignment rules
+            if len(content) < 50 and current_indent > avg_indent:
+                # Likely a title or header - center it
+                processed_lines.append(content)
+            elif current_indent > max_indent * 0.5:
+                # Significantly indented - reduce to reasonable level
+                new_indent = min(8, current_indent // 2)
+                processed_lines.append(' ' * new_indent + content)
             else:
-                # Calculate indentation from leading spaces
-                stripped_line = line.lstrip()
-                leading_spaces = len(line) - len(stripped_line)
-                
-                # Set indentation (each 4 spaces = 0.25 inch)
-                if leading_spaces > 0:
-                    indent_inches = (leading_spaces / 4) * 0.25
-                    p.paragraph_format.left_indent = Inches(indent_inches)
-                
-                # Add the text, preserving internal spacing
-                p.add_run(stripped_line)
+                # Normal text - minimal or no indentation
+                processed_lines.append(content)
         
-        # Save the document
-        doc.save(output_path)
-        print(f"✅ Document saved to: {output_path} (Orientation: {orientation})")
+        return '\n'.join(processed_lines)
 
-    def extract_text(self, image_path: str) -> Dict[str, Any]:
-        """Main extraction method. Supports image files and PDFs (first page)."""
-        # Detect if PDF
-        if image_path.lower().endswith('.pdf'):
-            if convert_from_path is None:
-                raise ImportError("pdf2image is required for PDF support. Install with 'pip install pdf2image'.")
-            pages = convert_from_path(image_path, dpi=150, first_page=1, last_page=1)
-            if not pages:
-                raise FileNotFoundError(f"No pages found in PDF '{image_path}'.")
-            img = np.array(pages[0])
-            if img.shape[2] == 4:  # RGBA to RGB
-                img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
-        else:
-            img = cv2.imread(image_path)
-            if img is None:
-                raise FileNotFoundError(f"Image file '{image_path}' not found.")
-
-        # Detect orientation
-        orientation = self._detect_orientation(img)
-
-        # Extract text with improved layout preservation
+    def extract_text_enhanced(self, image_path: str) -> Dict[str, Any]:
+        """Enhanced text extraction with layout preservation"""
+        # Load image
+        img = cv2.imread(image_path)
+        if img is None:
+            raise FileNotFoundError(f"Image file '{image_path}' not found.")
+        
+        # Use the improved layout extraction from reference code
         text = self._extract_with_layout_improved(img)
-
-        # Fix line continuations and hyphenated words
-        text = self._fix_line_continuations(text)
-
-        # Filter out nonsense words
+        
+        # Apply nonsense word filtering
         text = self._filter_nonsense_words(text)
-
-        # Detect bullet points
-        bullet_items = self.detect_bullet_points(img)
-        text_with_bullets = self._insert_bullet_points(text, img, bullet_items)
-
+        
+        # Fix line continuations
+        text, continuation_count = self._fix_line_continuations(text)
+        
+        # Merge continuous sentences
+        lines = text.split('\n')
+        merged_lines, merge_count = self._merge_continuous_sentences(lines)
+        text = '\n'.join(merged_lines)
+        
+        # Analyze and adjust text alignment
+        text = self._analyze_text_alignment(text)
+        
+        # Final post-processing
+        text = self._post_process_text(text)
+        
         return {
-            "text": text_with_bullets.strip(),
-            "bullets": [item['box'] for item in bullet_items],
-            "orientation": orientation
+            "text": text.strip(),
+            "stats": {
+                "line_continuations": continuation_count,
+                "sentence_merges": merge_count,
+                "total_merges": continuation_count + merge_count
+            }
         }
-
-    def process_image(self, image_path: str, output_docx: str = None) -> Dict[str, Any]:
-        """Process image and optionally save to DOCX"""
-        result = self.extract_text(image_path)
-        
-        # Save to DOCX if output path provided
-        if output_docx:
-            self.save_to_docx(
-                result["text"], 
-                output_docx, 
-                result["orientation"]
+    
+    def correct_with_languagetool(self, text: str) -> str:
+        """Apply grammar correction using LanguageTool"""
+        try:
+            response = requests.post(
+                "https://api.languagetool.org/v2/check",
+                data={
+                    "text": text,
+                    "language": "auto"  # auto-detect language
+                },
+                timeout=30
             )
-        
-        return result
-    
+            
+            if response.status_code != 200:
+                print(f"LanguageTool API error: {response.status_code}")
+                return text
+            
+            # Apply corrections
+            suggested_text = text
+            offset_correction = 0
+            
+            for match in response.json()["matches"]:
+                if match['replacements']:
+                    start = match['offset'] + offset_correction
+                    end = start + match['length']
+                    replacement = match['replacements'][0]['value']
+                    suggested_text = suggested_text[:start] + replacement + suggested_text[end:]
+                    offset_correction += len(replacement) - match['length']
+            
+            return suggested_text
+            
+        except Exception as e:
+            print(f"LanguageTool correction failed: {e}")
+            return text
+
+# === Main execution ===
 if __name__ == "__main__":
-    ocr = ImageToText()
-    
-    # Process the image/PDF
-    result = ocr.process_image('Screenshot 2025-07-06 095609.png', 'processed_document.docx')
-    
-    print("🔍 Extracted Text:\n", result["text"])
-    print("📄 Detected bullet points:", result["bullets"])
-    print("🔄 Document orientation:", result["orientation"])
-    print("💾 Text also saved to 'processed_document.docx'")
-    
-    # Still save to txt for backup
-    with open("output.txt", "w", encoding="utf-8") as f:
-        f.write(result["text"])
+    try:
+        # Initialize enhanced OCR
+        ocr = EnhancedOCR()
+        
+        # Extract text with enhanced layout preservation
+        result = ocr.extract_text_enhanced('Screenshot 2025-06-25 224812.png')
+        
+        print("🔍 Enhanced Extracted Text:")
+        print("=" * 50)
+        print(result["text"])
+        print("=" * 50)
+        
+        print("\n📊 Processing Statistics:")
+        print(f" - Line continuations fixed: {result['stats']['line_continuations']}")
+        print(f" - Sentence merges: {result['stats']['sentence_merges']}")
+        print(f" - Total improvements: {result['stats']['total_merges']}")
+        
+        # Apply grammar correction
+        print("\n✅ Applying grammar correction...")
+        corrected_text = ocr.correct_with_languagetool(result["text"])
+        
+        print("\n📝 Final Corrected Text:")
+        print("=" * 50)
+        print(corrected_text)
+        print("=" * 50)
+        
+        # Save results
+        with open("enhanced_output.txt", "w", encoding="utf-8") as f:
+            f.write("=== ENHANCED EXTRACTED TEXT ===\n")
+            f.write(result["text"])
+            f.write("\n\n=== GRAMMAR CORRECTED TEXT ===\n")
+            f.write(corrected_text)
+        
+        print("\n💾 Results saved to 'enhanced_output.txt'")
+        
+    except Exception as e:
+        print(f"❌ Error: {str(e)}")
+        print("Possible solutions:")
+        print("1. Make sure the image file exists and path is correct")
+        print("2. Install required packages: pip install opencv-python pytesseract requests pyspellchecker")
+        print("3. Install Tesseract OCR: https://github.com/tesseract-ocr/tesseract")
+        print("4. Check internet connection for LanguageTool API")

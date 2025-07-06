@@ -1,7 +1,6 @@
 services:
   translator:
     build: ./translate
-    image: model2_dabbdabbda:latest
     container_name: translator
     ports:
       - "8000:8000"
@@ -18,7 +17,6 @@ services:
 
   ocr:
     build: ./ocr
-    image: ocr_service:latest
     container_name: ocr
     volumes:
       - ./ocr:/app

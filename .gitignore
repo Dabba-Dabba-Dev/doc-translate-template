@@ -11,3 +11,6 @@ ocr/*.png
 ocr/*.jpg
 ocr/*.pdf
 translate/Screenshot 2025-06-25 224812.png
+ocr/image_to_text.py ocr/output.txt
+ocr/output.txt
+ocr/*.docx

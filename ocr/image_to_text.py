@@ -5,398 +5,238 @@ import numpy as np
 import re
 from typing import List, Dict, Any, Tuple
 from spellchecker import SpellChecker
+from docx import Document
+from docx.shared import Inches
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+from docx.enum.section import WD_SECTION, WD_ORIENT
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-class EnhancedOCR:
+try:
+    from pdf2image import convert_from_path
+except ImportError:
+    convert_from_path = None
+
+class EnhancedOCRWithDocx:
     def __init__(self):
         # Initialize spell checker
         self.spell = SpellChecker()
+        
+        # Bullet symbols from original code
+        self.bullet_symbols = {
+            'circle': '•',
+            'square': '■',
+            'check': '✓',
+            'cross': '✗'
+        }
         
         # Common meaningless patterns for OCR errors
         self.meaningless_patterns = [
             r'^([a-zA-Z])\1{2,}$',  # Any letter repeated 3+ times
             r'^[^a-zA-Z0-9\s]+$',   # Only special characters
+            r'^[0-9]+[a-zA-Z]{1,2}$', # Numbers followed by 1-2 letters
+            r'^[a-zA-Z]{1,2}[0-9]+$', # 1-2 letters followed by numbers
         ]
         
         # Sentence ending punctuation
         self.sentence_endings = r'[.!?:;]'
+
+    def _detect_orientation(self, img: np.ndarray) -> str:
+        """Detect if the image/document is landscape or portrait"""
+        height, width = img.shape[:2]
+        return "landscape" if width > height else "portrait"
         
     def _preprocess_image(self, img: np.ndarray) -> np.ndarray:
-        """Basic image preprocessing for OCR (from reference code)"""
+        """Basic image preprocessing for OCR"""
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
         return cv2.GaussianBlur(thresh, (3, 3), 0)
+    
+    def _extract_lines_with_alignment(self, img: np.ndarray) -> List[Dict[str, Any]]:
+        """Improved alignment detection that better handles right-aligned contact info"""
+        results = []
+        h_img, w_img = img.shape[:2]
+        
+        # Conservative thresholds
+        CENTER_MARGIN_PX = 50          # Strict center threshold
+        RIGHT_MARGIN_PX = 70           # Minimum right offset to count as right-aligned
+        MIN_RIGHT_ALIGN_WIDTH = 0.4    # Minimum width for right-aligned blocks
+        
+        custom_config = r'--oem 3 --psm 6'
+        data = pytesseract.image_to_data(img, config=custom_config, output_type=pytesseract.Output.DICT)
 
-    def _is_meaningless_word(self, word: str) -> bool:
-        """Check if a word is likely a meaningless OCR error"""
-        if not word or len(word) < 2:
-            return False
-            
-        # Check against meaningless patterns
-        for pattern in self.meaningless_patterns:
-            if re.match(pattern, word):
-                return True
-        
-        # Check for words with unusual character repetition
-        if len(word) >= 3:
-            char_counts = {}
-            for char in word.lower():
-                char_counts[char] = char_counts.get(char, 0) + 1
-            
-            # If any character appears more than 50% of the time and word is short
-            max_char_ratio = max(char_counts.values()) / len(word)
-            if max_char_ratio > 0.5 and len(word) <= 5:
-                return True
-        
-        return False
+        current_line = {
+            'text': '',
+            'left': w_img,  # Initialize with max value
+            'right': 0      # Initialize with min value
+        }
+        prev_line_num = -1
 
-    def _filter_nonsense_words(self, text: str) -> str:
-        """
-        Enhanced filtering focusing on short meaningless words and OCR errors
-        while preserving EXACT original spacing and indentation.
-        """
-        lines = text.split('\n')
-        cleaned_lines = []
-        
-        for line in lines:
-            # Skip completely empty lines (preserve newlines)
-            if not line.strip():
-                cleaned_lines.append(line)
+        for i in range(len(data['text'])):
+            if int(data['conf'][i]) < 0:
                 continue
-                
-            # Track original character positions
-            cleaned_chars = []
-            i = 0
-            n = len(line)
-            
-            while i < n:
-                # Handle non-word characters (spaces, punctuation)
-                if not line[i].isalnum():
-                    cleaned_chars.append(line[i])
-                    i += 1
-                    continue
-                    
-                # Extract full word starting at position i
-                word_start = i
-                while i < n and line[i].isalnum():
-                    i += 1
-                word = line[word_start:i]
-                
-                # Check if word should be kept
-                keep_word = False
-                if word:  # Only process if we actually found a word
-                    lower_word = word.lower()
-                    
-                    # Check if it's a meaningful word
-                    if not self._is_meaningless_word(word):
-                        keep_word = (
-                            len(word) >= 3 or
-                            word.istitle() or
-                            word.isupper() or
-                            word in self.spell or
-                            any(char.isdigit() for char in word) or
-                            (len(word) > 2 and lower_word in self.spell)
-                        )
-                
-                # Preserve either the word or its original spacing
-                if keep_word:
-                    cleaned_chars.append(word)
-                else:
-                    # Replace word with empty string BUT PRESERVE POSITION
-                    # This maintains alignment of surrounding text
-                    cleaned_chars.append(' ' * len(word) if line[word_start].isspace() else '')
-                    
-            # Reconstruct line exactly with original spacing
-            cleaned_line = ''.join(cleaned_chars)
-            
-            # Only clean redundant spaces if they're not part of indentation
-            if cleaned_line.strip():
-                # Collapse only MID-LINE multiple spaces
-                cleaned_line = re.sub(r'(?<=\S)\s+(?=\S)', ' ', cleaned_line)
-            
-            cleaned_lines.append(cleaned_line)
-            
-        return '\n'.join(cleaned_lines)
 
-    def _extract_with_layout_improved(self, img: np.ndarray) -> str:
-        """Extract text with improved layout preservation (from reference code)"""
-        try:
-            processed = self._preprocess_image(img)
-            data = pytesseract.image_to_data(
-                processed,
-                output_type=pytesseract.Output.DICT,
-                config='--oem 3 --psm 6 -c preserve_interword_spaces=1'
-            )
-            
-            # Dictionary to hold lines {y_position: [words]}
-            lines = {}
-            
-            for i in range(len(data['text'])):
-                if data['text'][i].strip():
-                    y_pos = data['top'][i]
-                    line_key = y_pos // 10  # Group words into lines (adjust 10 as needed)
+            text = data['text'][i].strip()
+            if not text:
+                continue
+
+            line_num = data['line_num'][i]
+            left = data['left'][i]
+            width = data['width'][i]
+            right = left + width
+
+            if line_num != prev_line_num:
+                if current_line['text']:
+                    # Calculate alignment with improved rules
+                    line_width = current_line['right'] - current_line['left']
+                    line_center = current_line['left'] + (line_width / 2)
                     
-                    if line_key not in lines:
-                        lines[line_key] = []
-                    
-                    lines[line_key].append({
-                        'text': data['text'][i],
-                        'left': data['left'][i],
-                        'width': data['width'][i]
+                    # Check for right-aligned text first (contact info, dates etc.)
+                    right_offset = w_img - current_line['right']
+                    if (right_offset <= RIGHT_MARGIN_PX and 
+                        line_width < w_img * MIN_RIGHT_ALIGN_WIDTH):
+                        alignment = "right"
+                    # Then check for centered text
+                    elif abs(line_center - (w_img / 2)) <= CENTER_MARGIN_PX:
+                        alignment = "center"
+                    else:
+                        alignment = "left"
+                        
+                    results.append({
+                        "text": current_line['text'].strip(),
+                        "alignment": alignment
                     })
-
-            # Sort lines by vertical position
-            sorted_lines = sorted(lines.items(), key=lambda x: x[0])
-            
-            output_lines = []
-            for line_key, words in sorted_lines:
-                # Sort words horizontally
-                words.sort(key=lambda x: x['left'])
                 
-                # Calculate indentation (first word's position)
-                if words:
-                    first_word_pos = words[0]['left']
-                    indent_spaces = first_word_pos // 10  # Convert pixels to spaces
-                    
-                    # Build the line
-                    line_text = ' ' * indent_spaces
-                    prev_end = first_word_pos
-                    
-                    for word in words:
-                        # Add spacing between words
-                        gap = word['left'] - prev_end
-                        if gap > 5:  # Only add spaces if significant gap
-                            line_text += ' ' * max(1, gap // 10)
-                        line_text += word['text']
-                        prev_end = word['left'] + word['width']
-                    
-                    output_lines.append(line_text)
+                # Start new line
+                current_line = {
+                    'text': text + ' ',
+                    'left': left,
+                    'right': right
+                }
+                prev_line_num = line_num
+            else:
+                # Continue current line
+                current_line['text'] += text + ' '
+                current_line['left'] = min(current_line['left'], left)
+                current_line['right'] = max(current_line['right'], right)
 
-            return '\n'.join(output_lines)
+        # Process the last line
+        if current_line['text']:
+            line_width = current_line['right'] - current_line['left']
+            line_center = current_line['left'] + (line_width / 2)
+            right_offset = w_img - current_line['right']
+            
+            if (right_offset <= RIGHT_MARGIN_PX and 
+                line_width < w_img * MIN_RIGHT_ALIGN_WIDTH):
+                alignment = "right"
+            elif abs(line_center - (w_img / 2)) <= CENTER_MARGIN_PX:
+                alignment = "center"
+            else:
+                alignment = "left"
+                
+            results.append({
+                "text": current_line['text'].strip(),
+                "alignment": alignment
+            })
+
+        return results
+    def _extract_with_layout_improved(self, img: np.ndarray) -> str:
+        """Extract text using the simpler, more effective approach"""
+        try:
+            # Use the same preprocessing as the original simple method
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
+            thresh = cv2.GaussianBlur(thresh, (3, 3), 0)
+            
+            # Optional: Remove small noise (from original simple method)
+            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            for cnt in contours:
+                if cv2.contourArea(cnt) < 100:
+                    cv2.drawContours(thresh, [cnt], -1, 0, -1)
+            
+            # Use simple OCR config that works well
+            custom_config = r'--oem 3 --psm 6'
+            text = pytesseract.image_to_string(thresh, config=custom_config)
+            
+            return text
             
         except Exception as e:
-            print(f"Layout extraction failed: {e}")
+            print(f"OCR extraction failed: {e}")
+            # Fallback to basic OCR
             return pytesseract.image_to_string(img, config='--oem 3 --psm 6')
 
     def _fix_line_continuations(self, text: str) -> Tuple[str, int]:
         """Fix line continuations with hyphenated words and tracking"""
-        lines = [line for line in text.split('\n') if line.strip()]
+        lines = [line for line in text.split('\n')]
         if not lines:
             return text, 0
 
-        hyphens = {'-', '\u00AD', '–', '—', '‐', '‑', '~'}
+        # Define hyphen characters (including soft hyphens and common OCR line-break hyphens)
+        hyphens = {'-', '\u00AD', '–', '—', '‐', '‑'}
         continuation_count = 0
-
         fixed_lines = []
         i = 0
 
         while i < len(lines):
-            current_line = lines[i].rstrip()
-            
-            if not current_line:
-                fixed_lines.append(lines[i])
+            current_line = lines[i]
+            # Skip empty lines (preserve them as-is)
+            if not current_line.strip():
+                fixed_lines.append(current_line)
                 i += 1
                 continue
 
-            # Check for hyphen at end (ignore trailing spaces)
+            # Check if the line ends with a hyphen (ignore trailing spaces)
             stripped_current = current_line.rstrip()
             ends_with_hyphen = any(stripped_current.endswith(h) for h in hyphens)
-            
-            # Also check for comma continuation
-            ends_with_comma = stripped_current.endswith(',')
-            
-            # Check if next line starts lowercase
-            starts_lower = (i + 1 < len(lines) and 
-                        lines[i+1].strip() and 
-                        lines[i+1].strip()[0].islower())
 
-            if (ends_with_hyphen or ends_with_comma or starts_lower) and i + 1 < len(lines):
-                next_line = lines[i+1].lstrip()
-                if next_line:
-                    # Count this continuation
+            # Force merge if hyphen is found (no validity checks)
+            if ends_with_hyphen and i + 1 < len(lines):
+                next_line = lines[i + 1]
+                next_stripped = next_line.lstrip()
+                if next_stripped:
                     continuation_count += 1
-                    
-                    # Remove the hyphen if present
-                    if ends_with_hyphen:
-                        before_hyphen = stripped_current[:-1]
-                    else:
-                        before_hyphen = stripped_current
-                    
-                    # Merge with next line
-                    merged_line = before_hyphen + ' ' + next_line
-                    fixed_lines.append(merged_line)
-                    i += 2  # Skip next line
-                    continue
+                    # Remove the hyphen and merge with the next line's content
+                    before_hyphen = stripped_current[:-1]  # Remove the hyphen
+                    merged_line = before_hyphen + next_stripped  # Force merge
+                    # Preserve original indentation of the current line
+                    indent = current_line[:len(current_line) - len(current_line.lstrip())]
+                    current_line = indent + merged_line
+                    i += 1  # Skip the next line since we merged it
 
-            fixed_lines.append(lines[i])
+            fixed_lines.append(current_line)
             i += 1
 
         return '\n'.join(fixed_lines), continuation_count
 
-    def _merge_continuous_sentences(self, lines: List[str]) -> Tuple[List[str], int]:
-        """Merge continuous sentences with tracking"""
-        if not lines:
-            return lines, 0
+    def save_to_docx(self, lines: List[Dict[str, Any]], output_path: str, orientation: str = "portrait"):
+        doc = Document()
+        section = doc.sections[0]
 
-        merged = []
-        merge_count = 0
-        i = 0
+        if orientation == "landscape":
+            section.orientation = WD_ORIENT.LANDSCAPE
+            section.page_width, section.page_height = section.page_height, section.page_width
 
-        while i < len(lines):
-            current_line = lines[i].strip()
-            
-            if not current_line:
-                merged.append(lines[i])
-                i += 1
+        for line in lines:
+            text = line.get('text', '')
+            alignment = line.get('alignment', 'left')
+
+            if not text.strip():
+                doc.add_paragraph()
                 continue
 
-            merged_line = lines[i]  # Preserve original formatting
-            original_i = i
+            p = doc.add_paragraph()
+            p.add_run(text)
 
-            while i + 1 < len(lines):
-                next_line = lines[i + 1].strip()
-                
-                if not next_line:
-                    break
-
-                # Enhanced merging conditions
-                should_merge = self._should_merge_lines(merged_line, next_line)
-                
-                if should_merge:
-                    merge_count += 1
-                    original_indent = len(lines[i]) - len(lines[i].lstrip())
-                    merged_line = lines[i][:original_indent] + lines[i].lstrip() + ' ' + next_line
-                    i += 1
-                else:
-                    break
-
-            merged.append(merged_line)
-            if i == original_i:  # Only advance if no merge occurred
-                i += 1
-
-        return merged, merge_count
-
-    def _should_merge_lines(self, current_line: str, next_line: str) -> bool:
-        """Determine if two lines should be merged"""
-        current_stripped = current_line.strip()
-        next_stripped = next_line.strip()
-        
-        if not current_stripped or not next_stripped:
-            return False
-
-        # Current line conditions
-        ends_with_punct = any(current_stripped.endswith(p) for p in {'.', '!', '?', ':', ';', ',', ')', ']', '}', '"', "'"})
-        has_few_words = len(current_stripped.split()) <= 2
-        current_words = current_stripped.split()
-        last_word_upper = bool(current_words) and current_words[-1][0].isupper()
-        last_word_short = bool(current_words) and len(current_words[-1]) <= 3
-
-        # Next line conditions
-        next_starts_lower = next_stripped[0].islower()
-        next_starts_upper = next_stripped[0].isupper()
-        next_short = len(next_stripped.split()) <= 3
-        next_starts_with_article = next_stripped.lower().startswith(('the ', 'a ', 'an ', 'this ', 'that '))
-
-        # Merge conditions
-        return (
-            has_few_words or
-            (not ends_with_punct and next_starts_lower) or
-            (last_word_upper and next_starts_upper) or
-            (last_word_short and next_starts_lower) or
-            (ends_with_punct and next_starts_with_article) or
-            (current_stripped.endswith(',') and next_starts_lower)
-        )
-
-    def _post_process_text(self, text: str) -> str:
-        """Final cleanup of merged text"""
-        # Fix common OCR errors
-        text = re.sub(r'(\w)-\s+(\w)', r'\1\2', text)  # Fix space-after-hyphen
-        text = re.sub(r'\s+([.,;:!?])', r'\1', text)  # Remove space before punctuation
-        text = re.sub(r'([a-zA-Z])\s+-\s+([a-zA-Z])', r'\1-\2', text)  # Fix spaced hyphens
-        return text
-
-    def _analyze_text_alignment(self, text: str) -> str:
-        """Analyze and adjust text alignment based on spacing patterns"""
-        lines = text.split('\n')
-        if not lines:
-            return text
-        
-        # Analyze indentation patterns
-        line_indents = []
-        for line in lines:
-            if line.strip():  # Only non-empty lines
-                indent = len(line) - len(line.lstrip())
-                line_indents.append(indent)
-        
-        if not line_indents:
-            return text
-        
-        # Find common indentation levels
-        unique_indents = list(set(line_indents))
-        unique_indents.sort()
-        
-        # Determine if text appears to be centered or left-aligned
-        avg_indent = sum(line_indents) / len(line_indents)
-        max_indent = max(line_indents)
-        
-        processed_lines = []
-        for line in lines:
-            if not line.strip():
-                processed_lines.append('')
-                continue
-            
-            current_indent = len(line) - len(line.lstrip())
-            content = line.strip()
-            
-            # Apply alignment rules
-            if len(content) < 50 and current_indent > avg_indent:
-                # Likely a title or header - center it
-                processed_lines.append(content)
-            elif current_indent > max_indent * 0.5:
-                # Significantly indented - reduce to reasonable level
-                new_indent = min(8, current_indent // 2)
-                processed_lines.append(' ' * new_indent + content)
+            # Set alignment
+            if alignment == "center":
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            elif alignment == "right":
+                p.alignment = WD_ALIGN_PARAGRAPH.RIGHT
             else:
-                # Normal text - minimal or no indentation
-                processed_lines.append(content)
-        
-        return '\n'.join(processed_lines)
+                p.alignment = WD_ALIGN_PARAGRAPH.LEFT
 
-    def extract_text_enhanced(self, image_path: str) -> Dict[str, Any]:
-        """Enhanced text extraction with layout preservation"""
-        # Load image
-        img = cv2.imread(image_path)
-        if img is None:
-            raise FileNotFoundError(f"Image file '{image_path}' not found.")
-        
-        # Use the improved layout extraction from reference code
-        text = self._extract_with_layout_improved(img)
-        
-        # Apply nonsense word filtering
-        text = self._filter_nonsense_words(text)
-        
-        # Fix line continuations
-        text, continuation_count = self._fix_line_continuations(text)
-        
-        # Merge continuous sentences
-        lines = text.split('\n')
-        merged_lines, merge_count = self._merge_continuous_sentences(lines)
-        text = '\n'.join(merged_lines)
-        
-        # Analyze and adjust text alignment
-        text = self._analyze_text_alignment(text)
-        
-        # Final post-processing
-        text = self._post_process_text(text)
-        
-        return {
-            "text": text.strip(),
-            "stats": {
-                "line_continuations": continuation_count,
-                "sentence_merges": merge_count,
-                "total_merges": continuation_count + merge_count
-            }
-        }
-    
+        doc.save(output_path)
+        print(f"✅ Saved aligned document to {output_path}")
+
     def correct_with_languagetool(self, text: str) -> str:
         """Apply grammar correction using LanguageTool"""
         try:
@@ -431,14 +271,79 @@ class EnhancedOCR:
             print(f"LanguageTool correction failed: {e}")
             return text
 
+    def extract_text(self, image_path: str) -> Dict[str, Any]:
+        """Main extraction method. Supports image files and PDFs (first page)."""
+        # Detect if PDF
+        if image_path.lower().endswith('.pdf'):
+            if convert_from_path is None:
+                raise ImportError("pdf2image is required for PDF support. Install with 'pip install pdf2image'.")
+            pages = convert_from_path(image_path, dpi=150, first_page=1, last_page=1)
+            if not pages:
+                raise FileNotFoundError(f"No pages found in PDF '{image_path}'.")
+            img = np.array(pages[0])
+            if img.shape[2] == 4:  # RGBA to RGB
+                img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
+        else:
+            img = cv2.imread(image_path)
+            if img is None:
+                raise FileNotFoundError(f"Image file '{image_path}' not found.")
+
+        # Detect orientation
+        orientation = self._detect_orientation(img)
+
+        # Extract lines with alignment information
+        lines = self._extract_lines_with_alignment(img)
+
+        # Combine text for other processing
+        combined_text = "\n".join([line['text'] for line in lines])
+        
+        # Fix line continuations and hyphenated words
+        fixed_text, continuation_count = self._fix_line_continuations(combined_text)
+
+        return {
+            "lines": lines,  # This is what save_to_docx needs
+            "text": fixed_text,  # This is the combined text
+            "orientation": orientation,
+            "stats": {
+                "line_continuations": continuation_count,
+                "sentence_merges": 0,
+                "total_merges": continuation_count
+            }
+        }
+    
+    def process_image(self, image_path: str, output_docx: str = None, apply_grammar_correction: bool = False) -> Dict[str, Any]:
+        """Process image and optionally save to DOCX with grammar correction"""
+        result = self.extract_text(image_path)
+        
+        # Apply grammar correction if requested
+        final_text = result["text"]
+        if apply_grammar_correction:
+            print("✅ Applying grammar correction...")
+            final_text = self.correct_with_languagetool(result["text"])
+            result["corrected_text"] = final_text
+        
+        # Save to DOCX if output path provided
+        if output_docx:
+            self.save_to_docx(
+                result["lines"],  # Pass the lines with alignment info, not the text string
+                output_docx,
+                result["orientation"]
+            )
+        
+        return result
+
 # === Main execution ===
 if __name__ == "__main__":
     try:
-        # Initialize enhanced OCR
-        ocr = EnhancedOCR()
+        # Initialize enhanced OCR with DOCX support
+        ocr = EnhancedOCRWithDocx()
         
-        # Extract text with enhanced layout preservation
-        result = ocr.extract_text_enhanced('Screenshot 2025-06-25 224812.png')
+        # Process the image/PDF with DOCX saving and optional grammar correction
+        result = ocr.process_image(
+            'Screenshot 2025-07-06 095609.png', 
+            'enhanced_processed_document.docx',
+            apply_grammar_correction=True
+        )
         
         print("🔍 Enhanced Extracted Text:")
         print("=" * 50)
@@ -447,31 +352,35 @@ if __name__ == "__main__":
         
         print("\n📊 Processing Statistics:")
         print(f" - Line continuations fixed: {result['stats']['line_continuations']}")
-        print(f" - Sentence merges: {result['stats']['sentence_merges']}")
-        print(f" - Total improvements: {result['stats']['total_merges']}")
+        print(f" - Document orientation: {result['orientation']}")
         
-        # Apply grammar correction
-        print("\n✅ Applying grammar correction...")
-        corrected_text = ocr.correct_with_languagetool(result["text"])
+        if 'corrected_text' in result:
+            print("\n📝 Grammar Corrected Text:")
+            print("=" * 50)
+            print(result["corrected_text"])
+            print("=" * 50)
         
-        print("\n📝 Final Corrected Text:")
-        print("=" * 50)
-        print(corrected_text)
-        print("=" * 50)
-        
-        # Save results
-        with open("enhanced_output.txt", "w", encoding="utf-8") as f:
+        # Save results to text file as backup
+        with open("enhanced_output_with_docx.txt", "w", encoding="utf-8") as f:
             f.write("=== ENHANCED EXTRACTED TEXT ===\n")
             f.write(result["text"])
-            f.write("\n\n=== GRAMMAR CORRECTED TEXT ===\n")
-            f.write(corrected_text)
+            if 'corrected_text' in result:
+                f.write("\n\n=== GRAMMAR CORRECTED TEXT ===\n")
+                f.write(result["corrected_text"])
+            f.write(f"\n\n=== PROCESSING STATISTICS ===\n")
+            f.write(f"Line continuations fixed: {result['stats']['line_continuations']}\n")
+            f.write(f"Document orientation: {result['orientation']}\n")
         
-        print("\n💾 Results saved to 'enhanced_output.txt'")
+        print("\n💾 Results saved to:")
+        print("  - enhanced_processed_document.docx (formatted document)")
+        print("  - enhanced_output_with_docx.txt (text backup)")
         
     except Exception as e:
         print(f"❌ Error: {str(e)}")
         print("Possible solutions:")
         print("1. Make sure the image file exists and path is correct")
-        print("2. Install required packages: pip install opencv-python pytesseract requests pyspellchecker")
-        print("3. Install Tesseract OCR: https://github.com/tesseract-ocr/tesseract")
-        print("4. Check internet connection for LanguageTool API")
+        print("2. Install required packages:")
+        print("   pip install opencv-python pytesseract requests pyspellchecker python-docx")
+        print("3. For PDF support: pip install pdf2image")
+        print("4. Install Tesseract OCR: https://github.com/tesseract-ocr/tesseract")
+        print("5. Check internet connection for LanguageTool API")

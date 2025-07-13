@@ -1,7 +1,7 @@
 import cv2
 import pytesseract
-import requests
 import numpy as np
+import requests
 import re
 from typing import List, Dict, Any, Tuple
 from spellchecker import SpellChecker
@@ -16,12 +16,14 @@ try:
 except ImportError:
     convert_from_path = None
 
-class EnhancedOCRWithDocx:
+class EnhancedOCRProcessor:
+    """Enhanced OCR processor with advanced extraction capabilities"""
+    
     def __init__(self):
         # Initialize spell checker
         self.spell = SpellChecker()
         
-        # Bullet symbols from original code
+        # Bullet symbols
         self.bullet_symbols = {
             'circle': '•',
             'square': '■',
@@ -40,34 +42,216 @@ class EnhancedOCRWithDocx:
         # Sentence ending punctuation
         self.sentence_endings = r'[.!?:;]'
 
+    def extract_text_advanced(self, img: np.ndarray, languages: str = "eng") -> str:
+        """
+        Advanced text extraction with enhanced preprocessing and multi-language support
+        Args:
+            img: Input image as numpy array
+            languages: Language codes (e.g., 'eng', 'ara', 'chi_sim', 'fra+eng')
+        Returns:
+            Extracted text as string
+        """
+        try:
+            # Enhanced preprocessing
+            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            
+            # Denoising (helps with scanned docs)
+            denoised = cv2.fastNlMeansDenoising(gray, h=10)
+            
+            # Sharpening kernel for better text clarity
+            kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+            sharpened = cv2.filter2D(denoised, -1, kernel)
+            
+            # Optimal thresholding
+            _, thresh = cv2.threshold(sharpened, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            
+            # Multi-language OCR config with layout preservation
+            custom_config = f'''
+                --oem 3 
+                --psm 11 
+                -l {languages}
+                -c preserve_interword_spaces=1
+                -c tessedit_do_invert=0
+            '''
+            
+            # Perform OCR
+            text = pytesseract.image_to_string(thresh, config=custom_config)
+            
+            return text
+            
+        except Exception as e:
+            print(f"Advanced OCR extraction failed: {e}")
+            # Fallback to basic extraction
+            return self._fallback_extraction(img, languages)
+
+    def _fallback_extraction(self, img: np.ndarray, languages: str = "eng") -> str:
+        """Fallback extraction method"""
+        try:
+            # Convert to grayscale if needed
+            if len(img.shape) == 3:
+                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+            else:
+                gray = img
+            
+            # Basic preprocessing
+            denoised = cv2.fastNlMeansDenoising(gray, h=10)
+            _, thresh = cv2.threshold(denoised, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            
+            # Basic OCR config
+            custom_config = f'''
+                --oem 3 
+                --psm 11 
+                -l {languages}
+                -c preserve_interword_spaces=1
+                -c tessedit_do_invert=0
+            '''
+            
+            text = pytesseract.image_to_string(thresh, config=custom_config)
+            return text
+            
+        except Exception as e:
+            print(f"Fallback extraction failed: {e}")
+            return ""
+
+    def extract_text(self, image_path: str, languages: str = "eng", use_advanced: bool = True) -> str:
+        """
+        Main extraction method with multi-language support and advanced processing
+        Args:
+            image_path: Path to input image file
+            languages: Language codes (e.g., 'eng', 'ara', 'chi_sim', 'fra+eng')
+            use_advanced: Whether to use advanced extraction method
+        Returns:
+            Extracted text as string
+        """
+        try:
+            # Handle PDF files
+            if image_path.lower().endswith('.pdf'):
+                if convert_from_path is None:
+                    raise ImportError("pdf2image is required for PDF support. Install with 'pip install pdf2image'.")
+                pages = convert_from_path(image_path, dpi=150, first_page=1, last_page=1)
+                if not pages:
+                    raise FileNotFoundError(f"No pages found in PDF '{image_path}'.")
+                img = np.array(pages[0])
+                if img.shape[2] == 4:  # RGBA to RGB
+                    img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
+            else:
+                # Read image
+                img = cv2.imread(image_path)
+                if img is None:
+                    raise FileNotFoundError(f"Image not found: {image_path}")
+
+            # Use advanced or basic extraction
+            if use_advanced:
+                text = self.extract_text_advanced(img, languages)
+            else:
+                text = self._fallback_extraction(img, languages)
+            
+            # Apply post-processing
+            text = self._post_process_text(text)
+            
+            return text
+        
+        except Exception as e:
+            print(f"OCR processing failed: {str(e)}")
+            return ""
+
+    def _post_process_text(self, text: str) -> str:
+        """Post-process extracted text to improve quality"""
+        if not text:
+            return text
+        
+        # Fix line continuations
+        text, _ = self._fix_line_continuations(text)
+        
+        
+        # Remove meaningless patterns
+        lines = text.split('\n')
+        cleaned_lines = []
+        for line in lines:
+            line = line.strip()
+            if line and not self._is_meaningless_line(line):
+                cleaned_lines.append(line)
+        
+        return '\n'.join(cleaned_lines)
+
+    def _is_meaningless_line(self, line: str) -> bool:
+        """Check if a line contains meaningless OCR artifacts"""
+        for pattern in self.meaningless_patterns:
+            if re.match(pattern, line):
+                return True
+        return False
+
+    def _fix_line_continuations(self, text: str) -> Tuple[str, int]:
+        """Fix line continuations with hyphenated words"""
+        lines = [line for line in text.split('\n')]
+        if not lines:
+            return text, 0
+
+        # Define hyphen characters
+        hyphens = {'-', '\u00AD', '–', '—', '‐', '‑'}
+        continuation_count = 0
+        fixed_lines = []
+        i = 0
+
+        while i < len(lines):
+            current_line = lines[i]
+
+            # Check if the line ends with a hyphen
+            stripped_current = current_line.rstrip()
+            ends_with_hyphen = any(stripped_current.endswith(h) for h in hyphens)
+
+            # Merge if hyphen is found
+            if ends_with_hyphen and i + 1 < len(lines):
+                next_line = lines[i + 1]
+                next_stripped = next_line.lstrip()
+                if next_stripped:
+                    continuation_count += 1
+                    # Remove the hyphen and merge
+                    before_hyphen = stripped_current[:-1]
+                    merged_line = before_hyphen + next_stripped
+                    # Preserve original indentation
+                    indent = current_line[:len(current_line) - len(current_line.lstrip())]
+                    current_line = indent + merged_line
+                    i += 1  # Skip the next line
+
+            fixed_lines.append(current_line)
+            i += 1
+
+        return '\n'.join(fixed_lines), continuation_count
+
     def _detect_orientation(self, img: np.ndarray) -> str:
         """Detect if the image/document is landscape or portrait"""
         height, width = img.shape[:2]
         return "landscape" if width > height else "portrait"
-        
-    def _preprocess_image(self, img: np.ndarray) -> np.ndarray:
-        """Basic image preprocessing for OCR"""
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-        return cv2.GaussianBlur(thresh, (3, 3), 0)
-    
-    def _extract_lines_with_alignment(self, img: np.ndarray) -> List[Dict[str, Any]]:
-        """Improved alignment detection that better handles right-aligned contact info"""
+
+    def _extract_lines_with_alignment(self, img: np.ndarray, languages: str = "eng") -> List[Dict[str, Any]]:
+        """Extract lines with alignment detection"""
         results = []
         h_img, w_img = img.shape[:2]
+
+        # Use advanced preprocessing
+        processed_img = self._preprocess_image(img)
+
+        # Alignment detection thresholds
+        CENTER_MARGIN_PX = 50
+        RIGHT_MARGIN_PX = 70
+        MIN_RIGHT_ALIGN_WIDTH = 0.4
+
+        # OCR config for data extraction
+        custom_config = f'''
+            --oem 3 
+            --psm 11 
+            -l {languages}
+            -c preserve_interword_spaces=1 
+            -c tessedit_do_invert=0
+        '''
         
-        # Conservative thresholds
-        CENTER_MARGIN_PX = 50          # Strict center threshold
-        RIGHT_MARGIN_PX = 70           # Minimum right offset to count as right-aligned
-        MIN_RIGHT_ALIGN_WIDTH = 0.4    # Minimum width for right-aligned blocks
-        
-        custom_config = r'--oem 3 --psm 6'
-        data = pytesseract.image_to_data(img, config=custom_config, output_type=pytesseract.Output.DICT)
+        data = pytesseract.image_to_data(processed_img, config=custom_config, output_type=pytesseract.Output.DICT)
 
         current_line = {
             'text': '',
-            'left': w_img,  # Initialize with max value
-            'right': 0      # Initialize with min value
+            'left': w_img,
+            'right': 0
         }
         prev_line_num = -1
 
@@ -86,23 +270,21 @@ class EnhancedOCRWithDocx:
 
             if line_num != prev_line_num:
                 if current_line['text']:
-                    # Calculate alignment with improved rules
+                    # Calculate alignment
                     line_width = current_line['right'] - current_line['left']
                     line_center = current_line['left'] + (line_width / 2)
-                    
-                    # Check for right-aligned text first (contact info, dates etc.)
                     right_offset = w_img - current_line['right']
+                    
                     if (right_offset <= RIGHT_MARGIN_PX and 
                         line_width < w_img * MIN_RIGHT_ALIGN_WIDTH):
                         alignment = "right"
-                    # Then check for centered text
                     elif abs(line_center - (w_img / 2)) <= CENTER_MARGIN_PX:
                         alignment = "center"
                     else:
                         alignment = "left"
-                        
+                    
                     results.append({
-                        "text": current_line['text'].strip(),
+                        "text": current_line['text'],
                         "alignment": alignment
                     })
                 
@@ -132,82 +314,33 @@ class EnhancedOCRWithDocx:
                 alignment = "center"
             else:
                 alignment = "left"
-                
+            
             results.append({
-                "text": current_line['text'].strip(),
+                "text": current_line['text'],
                 "alignment": alignment
             })
 
         return results
-    def _extract_with_layout_improved(self, img: np.ndarray) -> str:
-        """Extract text using the simpler, more effective approach"""
-        try:
-            # Use the same preprocessing as the original simple method
+
+    def _preprocess_image(self, img: np.ndarray) -> np.ndarray:
+        """Advanced image preprocessing for OCR"""
+        # Convert to grayscale if needed
+        if len(img.shape) == 3:
             gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-            thresh = cv2.GaussianBlur(thresh, (3, 3), 0)
-            
-            # Optional: Remove small noise (from original simple method)
-            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            for cnt in contours:
-                if cv2.contourArea(cnt) < 100:
-                    cv2.drawContours(thresh, [cnt], -1, 0, -1)
-            
-            # Use simple OCR config that works well
-            custom_config = r'--oem 3 --psm 6'
-            text = pytesseract.image_to_string(thresh, config=custom_config)
-            
-            return text
-            
-        except Exception as e:
-            print(f"OCR extraction failed: {e}")
-            # Fallback to basic OCR
-            return pytesseract.image_to_string(img, config='--oem 3 --psm 6')
-
-    def _fix_line_continuations(self, text: str) -> Tuple[str, int]:
-        """Fix line continuations with hyphenated words and tracking"""
-        lines = [line for line in text.split('\n')]
-        if not lines:
-            return text, 0
-
-        # Define hyphen characters (including soft hyphens and common OCR line-break hyphens)
-        hyphens = {'-', '\u00AD', '–', '—', '‐', '‑'}
-        continuation_count = 0
-        fixed_lines = []
-        i = 0
-
-        while i < len(lines):
-            current_line = lines[i]
-            # Skip empty lines (preserve them as-is)
-            if not current_line.strip():
-                fixed_lines.append(current_line)
-                i += 1
-                continue
-
-            # Check if the line ends with a hyphen (ignore trailing spaces)
-            stripped_current = current_line.rstrip()
-            ends_with_hyphen = any(stripped_current.endswith(h) for h in hyphens)
-
-            # Force merge if hyphen is found (no validity checks)
-            if ends_with_hyphen and i + 1 < len(lines):
-                next_line = lines[i + 1]
-                next_stripped = next_line.lstrip()
-                if next_stripped:
-                    continuation_count += 1
-                    # Remove the hyphen and merge with the next line's content
-                    before_hyphen = stripped_current[:-1]  # Remove the hyphen
-                    merged_line = before_hyphen + next_stripped  # Force merge
-                    # Preserve original indentation of the current line
-                    indent = current_line[:len(current_line) - len(current_line.lstrip())]
-                    current_line = indent + merged_line
-                    i += 1  # Skip the next line since we merged it
-
-            fixed_lines.append(current_line)
-            i += 1
-
-        return '\n'.join(fixed_lines), continuation_count
+        else:
+            gray = img
+        
+        # Denoising
+        denoised = cv2.fastNlMeansDenoising(gray, h=10)
+        
+        # Sharpening
+        kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+        sharpened = cv2.filter2D(denoised, -1, kernel)
+        
+        return sharpened
 
     def save_to_docx(self, lines: List[Dict[str, Any]], output_path: str, orientation: str = "portrait"):
+        """Save extracted lines to DOCX with proper alignment"""
         doc = Document()
         section = doc.sections[0]
 
@@ -237,150 +370,208 @@ class EnhancedOCRWithDocx:
         doc.save(output_path)
         print(f"✅ Saved aligned document to {output_path}")
 
-    def correct_with_languagetool(self, text: str) -> str:
-        """Apply grammar correction using LanguageTool"""
+    
+    def process_image(self, image_path: str, languages: str = "eng", output_docx: str = None, use_advanced_method: bool = True) -> Dict[str, Any]:
+        """
+        Process image with full functionality
+        Args:
+            image_path: Path to input image
+            languages: Language codes
+            output_docx: Path to save DOCX file
+            use_advanced_method: Whether to use advanced extraction
+        Returns:
+            Dictionary with extraction results
+        """
         try:
-            response = requests.post(
-                "https://api.languagetool.org/v2/check",
-                data={
-                    "text": text,
-                    "language": "auto"  # auto-detect language
-                },
-                timeout=30
-            )
+            # Load image
+            if image_path.lower().endswith('.pdf'):
+                if convert_from_path is None:
+                    raise ImportError("pdf2image is required for PDF support.")
+                pages = convert_from_path(image_path, dpi=150, first_page=1, last_page=1)
+                if not pages:
+                    raise FileNotFoundError(f"No pages found in PDF '{image_path}'.")
+                img = np.array(pages[0])
+                if img.shape[2] == 4:  # RGBA to RGB
+                    img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
+            else:
+                img = cv2.imread(image_path)
+                if img is None:
+                    raise FileNotFoundError(f"Image file '{image_path}' not found.")
+
+            # Detect orientation
+            orientation = self._detect_orientation(img)
+
+            # Extract text using selected method
+            if use_advanced_method:
+                print("🚀 Using advanced extraction method...")
+                combined_text = self.extract_text_advanced(img, languages)
+                lines = self._extract_lines_with_alignment(img, languages)
+            else:
+                print("📝 Using standard extraction method...")
+                lines = self._extract_lines_with_alignment(img, languages)
+                combined_text = "\n".join([line['text'] for line in lines])
             
-            if response.status_code != 200:
-                print(f"LanguageTool API error: {response.status_code}")
-                return text
-            
-            # Apply corrections
-            suggested_text = text
-            offset_correction = 0
-            
-            for match in response.json()["matches"]:
-                if match['replacements']:
-                    start = match['offset'] + offset_correction
-                    end = start + match['length']
-                    replacement = match['replacements'][0]['value']
-                    suggested_text = suggested_text[:start] + replacement + suggested_text[end:]
-                    offset_correction += len(replacement) - match['length']
-            
-            return suggested_text
-            
+            # Fix line continuations
+            fixed_text, continuation_count = self._fix_line_continuations(combined_text)
+
+            # Apply grammar correction if requested
+            final_text = fixed_text
+
+            # Save to DOCX if requested
+            if output_docx:
+                self.save_to_docx(lines, output_docx, orientation)
+
+            return {
+                "lines": lines,
+                "text": final_text,
+                "raw_text": combined_text,
+                "orientation": orientation,
+                "languages": languages,
+                "extraction_method": "advanced" if use_advanced_method else "standard",
+                "stats": {
+                    "line_continuations": continuation_count,
+                    "word_count": len(final_text.split()),
+                    "char_count": len(final_text)
+                }
+            }
+
         except Exception as e:
-            print(f"LanguageTool correction failed: {e}")
-            return text
+            print(f"Error processing image: {e}")
+            return {
+                "error": str(e),
+                "text": "",
+                "lines": [],
+                "stats": {}
+            }
 
-    def extract_text(self, image_path: str) -> Dict[str, Any]:
-        """Main extraction method. Supports image files and PDFs (first page)."""
-        # Detect if PDF
-        if image_path.lower().endswith('.pdf'):
-            if convert_from_path is None:
-                raise ImportError("pdf2image is required for PDF support. Install with 'pip install pdf2image'.")
-            pages = convert_from_path(image_path, dpi=150, first_page=1, last_page=1)
-            if not pages:
-                raise FileNotFoundError(f"No pages found in PDF '{image_path}'.")
-            img = np.array(pages[0])
-            if img.shape[2] == 4:  # RGBA to RGB
-                img = cv2.cvtColor(img, cv2.COLOR_RGBA2RGB)
-        else:
-            img = cv2.imread(image_path)
-            if img is None:
-                raise FileNotFoundError(f"Image file '{image_path}' not found.")
-
-        # Detect orientation
-        orientation = self._detect_orientation(img)
-
-        # Extract lines with alignment information
-        lines = self._extract_lines_with_alignment(img)
-
-        # Combine text for other processing
-        combined_text = "\n".join([line['text'] for line in lines])
+    def compare_extraction_methods(self, image_path: str, languages: str = "eng") -> Dict[str, Any]:
+        """Compare advanced vs standard extraction methods"""
+        print("🔍 Comparing extraction methods...")
         
-        # Fix line continuations and hyphenated words
-        fixed_text, continuation_count = self._fix_line_continuations(combined_text)
-
+        # Extract with both methods
+        advanced_result = self.process_image(image_path, languages, use_advanced_method=True)
+        standard_result = self.process_image(image_path, languages, use_advanced_method=False)
+        
         return {
-            "lines": lines,  # This is what save_to_docx needs
-            "text": fixed_text,  # This is the combined text
-            "orientation": orientation,
-            "stats": {
-                "line_continuations": continuation_count,
-                "sentence_merges": 0,
-                "total_merges": continuation_count
+            "advanced": {
+                "text": advanced_result["text"],
+                "word_count": advanced_result["stats"]["word_count"],
+                "char_count": advanced_result["stats"]["char_count"],
+                "line_continuations": advanced_result["stats"]["line_continuations"]
+            },
+            "standard": {
+                "text": standard_result["text"],
+                "word_count": standard_result["stats"]["word_count"],
+                "char_count": standard_result["stats"]["char_count"],
+                "line_continuations": standard_result["stats"]["line_continuations"]
             }
         }
-    
-    def process_image(self, image_path: str, output_docx: str = None, apply_grammar_correction: bool = False) -> Dict[str, Any]:
-        """Process image and optionally save to DOCX with grammar correction"""
-        result = self.extract_text(image_path)
-        
-        # Apply grammar correction if requested
-        final_text = result["text"]
-        if apply_grammar_correction:
-            print("✅ Applying grammar correction...")
-            final_text = self.correct_with_languagetool(result["text"])
-            result["corrected_text"] = final_text
-        
-        # Save to DOCX if output path provided
-        if output_docx:
-            self.save_to_docx(
-                result["lines"],  # Pass the lines with alignment info, not the text string
-                output_docx,
-                result["orientation"]
-            )
-        
-        return result
 
-# === Main execution ===
+
+# Example usage
 if __name__ == "__main__":
     try:
-        # Initialize enhanced OCR with DOCX support
-        ocr = EnhancedOCRWithDocx()
+        # Initialize enhanced OCR processor
+        ocr = EnhancedOCRProcessor()
         
-        # Process the image/PDF with DOCX saving and optional grammar correction
+        # Process with multiple languages (English + German example)
         result = ocr.process_image(
-            'Screenshot 2025-07-06 095609.png', 
-            'enhanced_processed_document.docx',
-            apply_grammar_correction=True
+            "Screenshot 2025-07-06 095609.png",
+            languages="eng+deu",
+            output_docx="enhanced_output.docx",
+            use_advanced_method=True
         )
         
-        print("🔍 Enhanced Extracted Text:")
+        print("Enhanced OCR Results:")
         print("=" * 50)
         print(result["text"])
         print("=" * 50)
         
-        print("\n📊 Processing Statistics:")
-        print(f" - Line continuations fixed: {result['stats']['line_continuations']}")
-        print(f" - Document orientation: {result['orientation']}")
-        
-        if 'corrected_text' in result:
-            print("\n📝 Grammar Corrected Text:")
-            print("=" * 50)
-            print(result["corrected_text"])
-            print("=" * 50)
-        
-        # Save results to text file as backup
-        with open("enhanced_output_with_docx.txt", "w", encoding="utf-8") as f:
-            f.write("=== ENHANCED EXTRACTED TEXT ===\n")
-            f.write(result["text"])
-            if 'corrected_text' in result:
-                f.write("\n\n=== GRAMMAR CORRECTED TEXT ===\n")
-                f.write(result["corrected_text"])
-            f.write(f"\n\n=== PROCESSING STATISTICS ===\n")
-            f.write(f"Line continuations fixed: {result['stats']['line_continuations']}\n")
-            f.write(f"Document orientation: {result['orientation']}\n")
-        
-        print("\n💾 Results saved to:")
-        print("  - enhanced_processed_document.docx (formatted document)")
-        print("  - enhanced_output_with_docx.txt (text backup)")
+        print(f"\nStatistics:")
+        print(f"- Words: {result['stats']['word_count']}")
+        print(f"- Characters: {result['stats']['char_count']}")
+        print(f"- Line continuations fixed: {result['stats']['line_continuations']}")
+        print(f"- Orientation: {result['orientation']}")
+        print(f"- Languages: {result['languages']}")
+        print(f"- Method: {result['extraction_method']}")
+        print(f"- Grammar corrected: {result['grammar_corrected']}")
         
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
-        print("Possible solutions:")
-        print("1. Make sure the image file exists and path is correct")
-        print("2. Install required packages:")
-        print("   pip install opencv-python pytesseract requests pyspellchecker python-docx")
-        print("3. For PDF support: pip install pdf2image")
-        print("4. Install Tesseract OCR: https://github.com/tesseract-ocr/tesseract")
-        print("5. Check internet connection for LanguageTool API")
+        print(f"Error: {e}")
+
+# Common language codes for reference:
+# 'eng' - English
+# 'ara' - Arabic  
+# 'chi_sim' - Chinese Simplified
+# 'chi_tra' - Chinese Traditional
+# 'fra' - French
+# 'deu' - German
+# 'spa' - Spanish
+# 'rus' - Russian
+# 'jpn' - Japanese
+# 'kor' - Korean
+# 'hin' - Hindi
+# 'ita' - Italian
+# 'por' - Portuguese
+# 'tur' - Turkish
+# 'pol' - Polish
+# 'nld' - Dutch
+# 'swe' - Swedish
+# 'dan' - Danish
+# 'nor' - Norwegian
+# 'fin' - Finnish
+# 'ces' - Czech
+# 'hun' - Hungarian
+# 'ron' - Romanian
+# 'bul' - Bulgarian
+# 'hrv' - Croatian
+# 'slv' - Slovenian
+# 'slk' - Slovak
+# 'est' - Estonian
+# 'lav' - Latvian
+# 'lit' - Lithuanian
+# 'ell' - Greek
+# 'heb' - Hebrew
+# 'tha' - Thai
+# 'vie' - Vietnamese
+# 'ind' - Indonesian
+# 'msa' - Malay
+# 'tgl' - Tagalog
+# 'ukr' - Ukrainian
+# 'bel' - Belarusian
+# 'cat' - Catalan
+# 'eus' - Basque
+# 'glg' - Galician
+# 'aze' - Azerbaijani
+# 'uzb' - Uzbek
+# 'kaz' - Kazakh
+# 'kir' - Kyrgyz
+# 'tgk' - Tajik
+# 'mon' - Mongolian
+# 'nep' - Nepali
+# 'ben' - Bengali
+# 'guj' - Gujarati
+# 'pan' - Punjabi
+# 'tam' - Tamil
+# 'tel' - Telugu
+# 'kan' - Kannada
+# 'mal' - Malayalam
+# 'ori' - Odia
+# 'asm' - Assamese
+# 'mar' - Marathi
+# 'sin' - Sinhala
+# 'mya' - Myanmar
+# 'khm' - Khmer
+# 'lao' - Lao
+# 'bod' - Tibetan
+# 'dzo' - Dzongkha
+# 'fas' - Persian
+# 'pus' - Pashto
+# 'urd' - Urdu
+# 'snd' - Sindhi
+# 'amh' - Amharic
+# 'tir' - Tigrinya
+# 'orm' - Oromo
+# 'som' - Somali
+# 'swa' - Swahili
+# 'afr' - Afrikaans

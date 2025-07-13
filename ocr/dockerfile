@@ -6,6 +6,7 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         tesseract-ocr \
+        tesseract-ocr-all \
         poppler-utils \
         libglib2.0-0 \
         libsm6 \

@@ -1,0 +1,10 @@
+
+=== PSM 6 (Block) Results ===
+Word Accuracy: 88.29%
+Sample Extracted Words:
+u beeidigte übersetzung aus dem arabischen republik tunesien wappen der tunesischen republik ministerium für hochschulbildung und wissenschaftliche forschung universität von manouba fakultät für literaturwissenschaft künste und humanwissenschaften das nationale zeugnis der fundamentalen lizenz bachelor nach vorlage des frlases nr 89 des jahres 1986 vom o1 september 1986 über die emichtung...
+
+=== PSM 11 (Sparse) Results ===
+Word Accuracy: 76.35%
+Sample Extracted Words:
+beeidigte übersetzung aus dem arabischen republik tunesien wappen der tunesischen republik ministerium für hochschulbildung und wissenschaftliche forschung universität von manouba fakultät für literaturwissenschaft künste und humanwissenschaften das nationale zeu gnis der fundamentalen lizenz bachelor nach vorlage des frlasscs nr 83 des jahres 1986 vom o1 september 1986 über die emichtung...

@@ -356,7 +356,7 @@ if __name__ == "__main__":
         # Process the image/PDF with DOCX saving and optional grammar correction
         result = ocr.process_image(
             "diplome licence allemand.pdf",  # Fixed: consistent quotes
-            "enhanced_processed_document.docx",
+            "ocr_output.docx",
             apply_grammar_correction=True
         )
         

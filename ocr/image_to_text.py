@@ -33,9 +33,7 @@ class EnhancedOCRWithDocx:
         # Common meaningless patterns for OCR errors
         self.meaningless_patterns = [
             r'^([a-zA-Z])\1{2,}$',  # Any letter repeated 3+ times
-            r'^[^a-zA-Z0-9\s]+$',   # Only special characters
-            r'^[0-9]+[a-zA-Z]{1,2}$', # Numbers followed by 1-2 letters
-            r'^[a-zA-Z]{1,2}[0-9]+$', # 1-2 letters followed by numbers
+            r'^[^a-zA-Z0-9\s]+$',   # Only special character
         ]
         
         # Sentence ending punctuation
@@ -58,7 +56,7 @@ class EnhancedOCRWithDocx:
         h_img, w_img = img.shape[:2]
         
         # Conservative thresholds
-        CENTER_MARGIN_PX = 50          # Strict center threshold
+        CENTER_MARGIN_PX = 40          # Strict center threshold
         RIGHT_MARGIN_PX = 70           # Minimum right offset to count as right-aligned
         MIN_RIGHT_ALIGN_WIDTH = 0.4    # Minimum width for right-aligned blocks
         
@@ -141,68 +139,58 @@ class EnhancedOCRWithDocx:
 
         return results
     
-    def _extract_with_layout_improved(self, img: np.ndarray) -> str:
-        """Extract text using the simpler, more effective approach"""
-        try:
-            # Use the same preprocessing as the original simple method
-            gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-            thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-            thresh = cv2.GaussianBlur(thresh, (3, 3), 0)
-            
-            # Optional: Remove small noise (from original simple method)
-            contours, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            for cnt in contours:
-                if cv2.contourArea(cnt) < 100:
-                    cv2.drawContours(thresh, [cnt], -1, 0, -1)
-            
-            # Use simple OCR config that works well
-            custom_config = r'--oem 3 --psm 6'
-            text = pytesseract.image_to_string(thresh, config=custom_config)
-            
-            return text
-            
-        except Exception as e:
-            print(f"OCR extraction failed: {e}")
-            # Fallback to basic OCR
-            return pytesseract.image_to_string(img, config='--oem 3 --psm 6')
-
+    
     def _fix_line_continuations(self, text: str) -> Tuple[str, int]:
-        """Fix line continuations with hyphenated words and tracking"""
-        lines = [line for line in text.split('\n')]
+        """Fix line continuations:
+        - Merge lines if the current ends with a hyphen (forced merge)
+        - Or if the next line starts with lowercase and the current line doesn't end with punctuation
+        """
+        lines = text.split('\n')
         if not lines:
             return text, 0
 
-        # Define hyphen characters (including soft hyphens and common OCR line-break hyphens)
         hyphens = {'-', '\u00AD', '–', '—', '‐', '‑'}
+        end_punctuation = {'.', '!', '?', ':', ';'}
         continuation_count = 0
         fixed_lines = []
         i = 0
 
         while i < len(lines):
             current_line = lines[i]
-            # Skip empty lines (preserve them as-is)
-            if not current_line.strip():
+            current_stripped = current_line.strip()
+
+            # Preserve empty lines
+            if not current_stripped:
                 fixed_lines.append(current_line)
                 i += 1
                 continue
 
-            # Check if the line ends with a hyphen (ignore trailing spaces)
-            stripped_current = current_line.rstrip()
-            ends_with_hyphen = any(stripped_current.endswith(h) for h in hyphens)
+            ends_with_hyphen = any(current_stripped.endswith(h) for h in hyphens)
 
-            # Force merge if hyphen is found (no validity checks)
-            if ends_with_hyphen and i + 1 < len(lines):
+            if i + 1 < len(lines):
                 next_line = lines[i + 1]
-                next_stripped = next_line.lstrip()
-                if next_stripped:
+                next_stripped = next_line.strip()
+
+                # 1. Merge if ends with hyphen
+                if ends_with_hyphen and next_stripped:
                     continuation_count += 1
-                    # Remove the hyphen and merge with the next line's content
-                    before_hyphen = stripped_current[:-1]  # Remove the hyphen
-                    merged_line = before_hyphen + next_stripped  # Force merge
-                    # Preserve original indentation of the current line
+                    before_hyphen = current_stripped[:-1]
+                    merged_line = before_hyphen + next_stripped
                     indent = current_line[:len(current_line) - len(current_line.lstrip())]
                     current_line = indent + merged_line
-                    i += 1  # Skip the next line since we merged it
+                    i += 1  # Skip next line
+
+                # 2. Merge if next starts with lowercase and current line doesn't end with punctuation
+                elif (
+                    next_stripped
+                    and next_stripped[0].islower()
+                    and current_stripped[-1] not in end_punctuation
+                ):
+                    continuation_count += 1
+                    merged_line = current_stripped + ' ' + next_stripped
+                    indent = current_line[:len(current_line) - len(current_line.lstrip())]
+                    current_line = indent + merged_line
+                    i += 1  # Skip next line
 
             fixed_lines.append(current_line)
             i += 1
@@ -252,40 +240,6 @@ class EnhancedOCRWithDocx:
         doc.save(output_path)
         print(f"✅ Saved aligned document to {output_path}")
     
-    def correct_with_languagetool(self, text: str) -> str:
-        """Apply grammar correction using LanguageTool"""
-        try:
-            response = requests.post(
-                "https://api.languagetool.org/v2/check",
-                data={
-                    "text": text,
-                    "language": "auto"  # auto-detect language
-                },
-                timeout=30
-            )
-            
-            if response.status_code != 200:
-                print(f"LanguageTool API error: {response.status_code}")
-                return text
-            
-            # Apply corrections
-            suggested_text = text
-            offset_correction = 0
-            
-            for match in response.json()["matches"]:
-                if match['replacements']:
-                    start = match['offset'] + offset_correction
-                    end = start + match['length']
-                    replacement = match['replacements'][0]['value']
-                    suggested_text = suggested_text[:start] + replacement + suggested_text[end:]
-                    offset_correction += len(replacement) - match['length']
-            
-            return suggested_text
-            
-        except Exception as e:
-            print(f"LanguageTool correction failed: {e}")
-            return text
-
     def extract_text(self, image_path: str) -> Dict[str, Any]:
         """Main extraction method. Supports image files and PDFs (first page)."""
         # Detect if PDF
@@ -326,16 +280,11 @@ class EnhancedOCRWithDocx:
             }
         }
     
-    def process_image(self, image_path: str, output_docx: str = None, apply_grammar_correction: bool = False) -> Dict[str, Any]:
+    def process_image(self, image_path: str, output_docx: str = None) -> Dict[str, Any]:
         """Process image and optionally save to DOCX with grammar correction"""
         result = self.extract_text(image_path)
         
-        # Apply grammar correction if requested
         final_text = result["text"]
-        if apply_grammar_correction:
-            print("✅ Applying grammar correction...")
-            final_text = self.correct_with_languagetool(result["text"])
-            result["corrected_text"] = final_text
         
         # Save to DOCX if output path provided
         if output_docx:
@@ -353,11 +302,10 @@ if __name__ == "__main__":
         # Initialize enhanced OCR with DOCX support
         ocr = EnhancedOCRWithDocx()
         
-        # Process the image/PDF with DOCX saving and optional grammar correction
+        # Process the image/PDF with DOCX saving 
         result = ocr.process_image(
-            "diplome licence allemand.pdf",  # Fixed: consistent quotes
-            "ocr_output.docx",
-            apply_grammar_correction=True
+            "Screenshot 2025-06-25 224812.png",  # Fixed: consistent quotes
+            "ocr_output.docx"
         )
         
         print("🔍 Enhanced Extracted Text:")
@@ -369,19 +317,12 @@ if __name__ == "__main__":
         print(f" - Line continuations fixed: {result['stats']['line_continuations']}")
         print(f" - Document orientation: {result['orientation']}")
         
-        if 'corrected_text' in result:
-            print("\n📝 Grammar Corrected Text:")
-            print("=" * 50)
-            print(result["corrected_text"])
-            print("=" * 50)
+        
         
         # Save results to text file as backup
         with open("enhanced_output_with_docx.txt", "w", encoding="utf-8") as f:
             f.write("=== ENHANCED EXTRACTED TEXT ===\n")
             f.write(result["text"])
-            if 'corrected_text' in result:
-                f.write("\n\n=== GRAMMAR CORRECTED TEXT ===\n")
-                f.write(result["corrected_text"])
             f.write(f"\n\n=== PROCESSING STATISTICS ===\n")
             f.write(f"Line continuations fixed: {result['stats']['line_continuations']}\n")
             f.write(f"Document orientation: {result['orientation']}\n")

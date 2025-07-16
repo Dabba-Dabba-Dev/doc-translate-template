@@ -27,4 +27,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 # 4. Application code (changes most frequently)
 COPY . .
 
-CMD ["python", "image_to_text.py"]
+CMD ["python", "app.py"]

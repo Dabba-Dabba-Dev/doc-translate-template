@@ -32,7 +32,7 @@ class EnhancedOCRWithDocx:
         
         # Common meaningless patterns for OCR errors
         self.meaningless_patterns = [
-            r'^([a-zA-Z])\1{2,}$',  # Any letter repeated 3+ times
+            r'^([a-zA-Z])\1\{2,\}$',  # Any letter repeated 3+ times
             r'^[^a-zA-Z0-9\s]+$',   # Only special character
         ]
         
@@ -50,7 +50,7 @@ class EnhancedOCRWithDocx:
         thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
         return cv2.GaussianBlur(thresh, (3, 3), 0)
     
-    def _extract_lines_with_alignment(self, img: np.ndarray) -> List[Dict[str, Any]]:
+    def _extract_lines_with_alignment(self, img: np.ndarray, lang: str = None) -> List[Dict[str, Any]]:
         """Improved alignment detection that better handles right-aligned contact info"""
         results = []
         h_img, w_img = img.shape[:2]
@@ -60,7 +60,11 @@ class EnhancedOCRWithDocx:
         RIGHT_MARGIN_PX = 70           # Minimum right offset to count as right-aligned
         MIN_RIGHT_ALIGN_WIDTH = 0.4    # Minimum width for right-aligned blocks
         
+        # Build custom config with language if provided
         custom_config = r'--oem 3 --psm 6'
+        if lang:
+            custom_config += f' -l {lang}'
+            
         data = pytesseract.image_to_data(img, config=custom_config, output_type=pytesseract.Output.DICT)
 
         current_line = {
@@ -138,7 +142,6 @@ class EnhancedOCRWithDocx:
             })
 
         return results
-    
     
     def _fix_line_continuations(self, text: str) -> Tuple[str, int]:
         """Fix line continuations:
@@ -240,7 +243,7 @@ class EnhancedOCRWithDocx:
         doc.save(output_path)
         print(f"✅ Saved aligned document to {output_path}")
     
-    def extract_text(self, image_path: str) -> Dict[str, Any]:
+    def extract_text(self, image_path: str, lang: str = None) -> Dict[str, Any]:
         """Main extraction method. Supports image files and PDFs (first page)."""
         # Detect if PDF
         if image_path.lower().endswith('.pdf'):
@@ -261,7 +264,7 @@ class EnhancedOCRWithDocx:
         orientation = self._detect_orientation(img)
 
         # Extract lines with alignment information
-        lines = self._extract_lines_with_alignment(img)
+        lines = self._extract_lines_with_alignment(img, lang)
 
         # Combine text for other processing
         combined_text = "\n".join([line['text'] for line in lines])
@@ -280,9 +283,9 @@ class EnhancedOCRWithDocx:
             }
         }
     
-    def process_image(self, image_path: str, output_docx: str = None) -> Dict[str, Any]:
+    def process_image(self, image_path: str, output_docx: str = None, lang: str = None) -> Dict[str, Any]:
         """Process image and optionally save to DOCX with grammar correction"""
-        result = self.extract_text(image_path)
+        result = self.extract_text(image_path, lang)
         
         final_text = result["text"]
         
@@ -295,48 +298,3 @@ class EnhancedOCRWithDocx:
             )
         
         return result
-
-# === Main execution ===
-if __name__ == "__main__":
-    try:
-        # Initialize enhanced OCR with DOCX support
-        ocr = EnhancedOCRWithDocx()
-        
-        # Process the image/PDF with DOCX saving 
-        result = ocr.process_image(
-            "Screenshot 2025-06-25 224812.png",  # Fixed: consistent quotes
-            "ocr_output.docx"
-        )
-        
-        print("🔍 Enhanced Extracted Text:")
-        print("=" * 50)
-        print(result["text"])
-        print("=" * 50)
-        
-        print("\n📊 Processing Statistics:")
-        print(f" - Line continuations fixed: {result['stats']['line_continuations']}")
-        print(f" - Document orientation: {result['orientation']}")
-        
-        
-        
-        # Save results to text file as backup
-        with open("enhanced_output_with_docx.txt", "w", encoding="utf-8") as f:
-            f.write("=== ENHANCED EXTRACTED TEXT ===\n")
-            f.write(result["text"])
-            f.write(f"\n\n=== PROCESSING STATISTICS ===\n")
-            f.write(f"Line continuations fixed: {result['stats']['line_continuations']}\n")
-            f.write(f"Document orientation: {result['orientation']}\n")
-        
-        print("\n💾 Results saved to:")
-        print("  - enhanced_processed_document.docx (formatted document)")
-        print("  - enhanced_output_with_docx.txt (text backup)")
-        
-    except Exception as e:
-        print(f"❌ Error: {str(e)}")
-        print("Possible solutions:")
-        print("1. Make sure the image file exists and path is correct")
-        print("2. Install required packages:")
-        print("   pip install opencv-python pytesseract requests pyspellchecker python-docx")
-        print("3. For PDF support: pip install pdf2image")
-        print("4. Install Tesseract OCR: https://github.com/tesseract-ocr/tesseract")
-        print("5. Check internet connection for LanguageTool API")

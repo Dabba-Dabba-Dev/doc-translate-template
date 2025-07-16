@@ -6,21 +6,12 @@ services:
       - "8000:8000"
     restart: "no"
 
-  labelstudio:
-    image: heartexlabs/label-studio:latest
-    container_name: labelstudio
-    ports:
-      - "8080:8080"
-    environment:
-      - LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true
-    restart: "no"
 
   ocr:
     build: ./ocr
     container_name: ocr
     volumes:
       - ./ocr:/app
-    # Uncomment and set if you want to expose a port
-    # ports:
-    #   - "9000:9000"
+    ports:
+      - "5000:5000"
     restart: "no"

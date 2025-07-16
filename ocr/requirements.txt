@@ -9,3 +9,9 @@ lxml==4.9.3
 opencv-python-headless==4.8.0.76
 python-docx==0.8.11
 regex==2023.10.3
+PyMuPDF 
+langdetect==1.0.9
+pdfplumber==0.10.2
+Flask==2.3.3
+Werkzeug==2.3.7
+

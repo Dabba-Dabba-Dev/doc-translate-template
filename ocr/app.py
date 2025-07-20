@@ -4,22 +4,22 @@ import tempfile
 from werkzeug.utils import secure_filename
 from datetime import datetime
 
-# Import functions/classes from the attached scripts
-from pdfextractor import extract_text_from_pdf
-from image_to_text import EnhancedOCRWithDocx
+# Import the enhanced OCR processor
+from image_to_text import EnhancedOCRProcessor
 
 app = Flask(__name__)
 
-# Initialize OCR class once
-ocr_processor = EnhancedOCRWithDocx()
+# Initialize OCR processor once
+ocr_processor = EnhancedOCRProcessor()
+
 @app.route('/upload', methods=['POST'])
 def upload_file():
     if 'file' not in request.files:
-        return jsonify({"error": "No file part in the request"}), 400
+        return jsonify({"status": "error", "message": "No file part in the request"}), 400
     
     file = request.files['file']
     if file.filename == '':
-        return jsonify({"error": "No selected file"}), 400
+        return jsonify({"status": "error", "message": "No selected file"}), 400
 
     # Get language parameter from form data or default to None
     lang = request.form.get('language', None)
@@ -27,7 +27,7 @@ def upload_file():
         lang = None
 
     temp_input_filepath = None
-    output_docx_filename = None  # Changed from temp path to permanent path
+    output_txt_filename = None
 
     try:
         filename = secure_filename(file.filename)
@@ -38,65 +38,75 @@ def upload_file():
             file.save(temp_file.name)
             temp_input_filepath = temp_file.name
 
-        # Create output DOCX filename in the current working directory
-        output_docx_filename = f"{original_name_without_ext}_extracted.docx"
-        output_docx_path = os.path.join(os.getcwd(), output_docx_filename)
+        # Create output TXT filename in the current working directory
+        output_txt_filename = "text_extracted.txt"
+        output_txt_path = os.path.join(os.getcwd(), output_txt_filename)
+
+        # Remove existing file if it exists
+        if os.path.exists(output_txt_path):
+            os.remove(output_txt_path)
 
         file_type_processed = "unknown"
+        all_pages_text = []
+        detected_languages = ""
         
-        # Determine file type based on extension and process
-        if filename.lower().endswith('.pdf'):
-            file_type_processed = "pdf_layout_attempt"
-            extracted_text, detected_languages = extract_text_from_pdf(
-                pdf_path=temp_input_filepath, 
-                lang=lang, 
-                output_docx_path=output_docx_path
-            )
-            
-            if not os.path.exists(output_docx_path) or os.path.getsize(output_docx_path) == 0:
-                print("PDF layout extraction failed to produce DOCX, attempting OCR via image_text_extractor...")
-                file_type_processed = "pdf_ocr_fallback"
-                ocr_result = ocr_processor.process_image(
-                    temp_input_filepath, 
-                    output_docx=output_docx_path, 
-                    lang=lang
-                )
-                extracted_text = ocr_result.get("text", "")
-                detected_languages = ocr_result.get("detected_languages", "")
-            else:
-                file_type_processed = "pdf_layout_success"
+        # Process the file using the unified processor
+        results = ocr_processor.process_file(
+            temp_input_filepath,
+            output_txt=output_txt_path,
+            lang=lang
+        )
 
+        # Combine text from all pages
+        for page in results:
+            all_pages_text.append(page['text'])
+            if page.get('stats', {}).get('detected_languages'):
+                detected_languages = page['stats']['detected_languages']
+
+        extracted_text = "\n\n--- Page Break ---\n\n".join(all_pages_text)
+
+        # Determine how the file was processed
+        if filename.lower().endswith('.pdf'):
+            file_type_processed = "pdf_ocr"
         elif filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff')):
             file_type_processed = "image_ocr"
-            ocr_result = ocr_processor.process_image(
-                temp_input_filepath, 
-                output_docx=output_docx_path, 
-                lang=lang
-            )
-            extracted_text = ocr_result.get("text", "")
-            detected_languages = ocr_result.get("detected_languages", "")
-        else:
-            return jsonify({"error": "Unsupported file type. Please upload a PDF or an image (png, jpg, jpeg, gif, bmp, tiff)."}), 400
 
-        if os.path.exists(output_docx_path) and os.path.getsize(output_docx_path) > 0:
-            # Return the DOCX file as a download AND keep it saved in the current directory
-            return send_file(
-                output_docx_path,
-                mimetype='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-                as_attachment=True,
-                download_name=os.path.basename(output_docx_path)
-            )
+        if extracted_text:
+            return jsonify({
+                "status": "success",
+                "message": "Extraction complete",
+                "file_type": file_type_processed,
+                "pages_processed": len(results),
+                "text_file": output_txt_filename
+            }), 200
         else:
-            return jsonify({"error": "Failed to generate DOCX file. No content extracted or an internal error occurred."}), 500
+            return jsonify({"status": "error", "message": "Failed to extract any text"}), 500
 
     except Exception as e:
         print(f"Error processing file: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": f"Processing failed: {str(e)}. Please ensure all dependencies are installed and Tesseract OCR is configured correctly."}), 500
+        return jsonify({"status": "error", "message": f"Processing failed: {str(e)}"}), 500
     finally:
-        # Clean up temporary input file only - keep the DOCX file
+        # Clean up temporary input file only
         if temp_input_filepath and os.path.exists(temp_input_filepath):
             os.remove(temp_input_filepath)
+
+@app.route('/download/<filename>', methods=['GET'])
+def download_file(filename):
+    try:
+        file_path = os.path.join(os.getcwd(), filename)
+        if os.path.exists(file_path):
+            return send_file(
+                file_path,
+                as_attachment=True,
+                download_name=filename,
+                mimetype='text/plain'
+            )
+        else:
+            return jsonify({"status": "error", "message": "File not found"}), 404
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', debug=True)
+    app.run(host='0.0.0.0', port=5000, debug=True, use_reloader=False)

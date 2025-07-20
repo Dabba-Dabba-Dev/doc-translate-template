@@ -120,67 +120,18 @@ def extract_page_blocks(pl_page, fmz_page, page_num):
 
   return page_blocks
 
-def export_to_docx(all_blocks_per_page, output_path, orientation="portrait"):
-  """
-  Exports a list of structured content blocks (text and tables) to a DOCX file.
-  """
-  document = Document()
-  section = document.sections[0]
-
-  # Set narrow margins (0.5 inches on all sides)
-  section.left_margin = Inches(0.5)
-  section.right_margin = Inches(0.5)
-  section.top_margin = Inches(0.5)
-  section.bottom_margin = Inches(0.5)
-  section.header_distance = Inches(0.25)
-  section.footer_distance = Inches(0.25)
-
-  if orientation == "landscape":
-      section.orientation = WD_ORIENT.LANDSCAPE
-      section.page_width, section.page_height = section.page_height, section.page_width
-  
-  style = document.styles['Normal']
-  font = style.font
-  font.name = 'Calibri'  # Or your preferred font
-  font.size = Pt(10)     # Set default font size to 10
-
-  for page_num, blocks_on_page in enumerate(all_blocks_per_page):
-      if page_num > 0:
-          document.add_page_break() # Add page break between pages
-      
-      document.add_heading(f"Page {page_num + 1}", level=2) # Add page number as heading
-
-      for block in blocks_on_page:
-          if block['type'] == 'text':
-              p = document.add_paragraph()
-              p.add_run(block['content'])
-              p.alignment = WD_ALIGN_PARAGRAPH.LEFT # Default to left alignment
-          elif block['type'] == 'table':
-              table_data = block['content']
-              if table_data:
-                  rows = len(table_data)
-                  cols = len(table_data[0]) if rows > 0 else 0
-                  if cols > 0:
-                      table = document.add_table(rows=rows, cols=cols)
-                      table.autofit = True
-                      table.allow_autofit = True
-                      table.style = 'Table Grid' # Apply a built-in table style
-
-                      for r_idx, row_data in enumerate(table_data):
-                          for c_idx, cell_text in enumerate(row_data):
-                              if c_idx < cols: # Ensure we don't go out of bounds
-                                  cell = table.cell(r_idx, c_idx)
-                                  cell.text = cell_text if cell_text else ""
-                                  if r_idx == 0: # Bold header row
-                                      for paragraph in cell.paragraphs:
-                                          for run in paragraph.runs:
-                                              run.bold = True
-                  else:
-                      document.add_paragraph("[Empty Table Placeholder]") # Handle empty table case
-          document.add_paragraph() # Add a blank line after each block for spacing
-
-  document.save(output_path)
-  print(f"✅ Saved document to {output_path}")
+def export_to_txt(all_blocks_per_page, output_txt_path):
+    """
+    Saves the extracted content (text and tables) into a plain .txt file.
+    """
+    with open(output_txt_path, "w", encoding="utf-8") as f:
+        for page_num, blocks in enumerate(all_blocks_per_page):
+            f.write(f"--- Page {page_num + 1} ---\n")
+            for block in blocks:
+                if block['type'] == 'text':
+                    f.write(block['content'].rstrip() + "\n\n")
+                elif block['type'] == 'table':
+                    f.write(format_table(block['content']) + "\n\n")
 
 def extract_ocr(pdf_path, lang=None):
   """Extracts text from PDF using OCR (Tesseract)."""
@@ -207,7 +158,7 @@ def extract_languages(text):
   except:
       return "Language detection failed"
 
-def extract_text_from_pdf(pdf_path, lang=None, output_docx_path=None):
+def extract_text_from_pdf(pdf_path, lang=None, output_docx_path=None, output_txt_path=None):
   """
   Extracts text and tables from a PDF, attempting layout-based extraction first,
   then falling back to OCR if no significant text is found.
@@ -252,8 +203,7 @@ def extract_text_from_pdf(pdf_path, lang=None, output_docx_path=None):
 
   # Export to DOCX if path is provided
   if output_docx_path:
-      # Assuming portrait orientation for now, as pdfextractor doesn't detect it.
-      export_to_docx(all_extracted_blocks_per_page, output_docx_path, orientation="portrait")
+        export_to_txt(all_extracted_blocks_per_page, output_txt_path)
 
   # Reconstruct the text string from blocks for the original return value
   text_output_string = StringIO()

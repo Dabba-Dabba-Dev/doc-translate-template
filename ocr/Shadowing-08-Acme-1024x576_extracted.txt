@@ -1,0 +1,11 @@
+                             SHADOWING PRACTICE 08
+       The city has contracted with Acme Construction to improve certain
+         roads in your neighborhood.  Work will commence on June 3rd, as
+     shown in the project schedule. This work will require road closures at
+      certain times throughout the project. We will be starting work
+    at 7:00 AM and will finish around 5:00 PM. If you are within the active
+      work zone limits and park your car in your driveway at night, please
+     be sure to move it prior to the 7:00 AM start time. We understand that
+      this may be a short-term inconvenience and we hope to work together
+       with you in a professional manner for the long-term improvement of
+      your neighborhood.

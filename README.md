@@ -26,11 +26,11 @@ Each `.ipynb` notebook benchmarks a different translation model using the **same
 | `google_t5_t5_base.ipynb`                           | `google-t5/t5-base`                                | 220M   |
 | `marianMT.ipynb`                                    | `Helsinki-NLP/opus-mt-XX-en` (multiple variants)   | ~300M  |
 
-> 💡 All notebooks are available in the `Benchmark/` folder.
+>  All notebooks are available in the `Benchmark/` folder.
 
 ---
 
-## 📊 Evaluation Metrics
+##  Evaluation Metrics
 
 Each model is evaluated using the following standard MT metrics (via `evaluate` and `COMET`):
 

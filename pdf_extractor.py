@@ -1,12 +1,8 @@
-import re
-import fitz
-import pytesseract
 from pdf2image import convert_from_path
 from langdetect import detect_langs
 import pdfplumber
 import os
 from io import StringIO
-from pdfplumber.table import TableSettings
 
 def is_real_table(tbl):
     if not tbl or len(tbl) < 2:

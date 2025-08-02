@@ -3,14 +3,28 @@ import os
 import tempfile
 from werkzeug.utils import secure_filename
 from datetime import datetime
+import pdfplumber
 
-# Import the enhanced OCR processor
+# Import both processors
 from image_to_text import EnhancedOCRProcessor
+from pdfextractor import extract_text_with_layout, has_extractable_text
 
 app = Flask(__name__)
 
 # Initialize OCR processor once
 ocr_processor = EnhancedOCRProcessor()
+
+def has_extractable_text(pdf_path):
+    """Check if PDF has extractable text content"""
+    try:
+        with pdfplumber.open(pdf_path) as pdf:
+            for page in pdf.pages[:3]:  # Check first 3 pages
+                text = page.extract_text()
+                if text and text.strip():
+                    return True
+        return False
+    except:
+        return False
 
 @app.route('/upload', methods=['POST'])
 def upload_file():
@@ -47,36 +61,63 @@ def upload_file():
             os.remove(output_txt_path)
 
         file_type_processed = "unknown"
-        all_pages_text = []
-        detected_languages = ""
+        extracted_text = ""
+        pages_processed = 1
         
-        # Process the file using the unified processor
-        results = ocr_processor.process_file(
-            temp_input_filepath,
-            output_txt=output_txt_path,
-            lang=lang
-        )
-
-        # Combine text from all pages
-        for page in results:
-            all_pages_text.append(page['text'])
-            if page.get('stats', {}).get('detected_languages'):
-                detected_languages = page['stats']['detected_languages']
-
-        extracted_text = "\n\n--- Page Break ---\n\n".join(all_pages_text)
-
-        # Determine how the file was processed
+        # Check if it's a PDF file
         if filename.lower().endswith('.pdf'):
-            file_type_processed = "pdf_ocr"
+            # First try to extract text using pdfextractor
+            if has_extractable_text(temp_input_filepath):
+                print("PDF has extractable text, using pdfextractor...")
+                extracted_text = extract_text_with_layout(temp_input_filepath)
+                file_type_processed = "pdf_text_extraction"
+                
+                # Write the extracted text to file
+                with open(output_txt_path, "w", encoding="utf-8") as f:
+                    f.write(extracted_text)
+            else:
+                print("PDF appears to be image-based, falling back to OCR...")
+                # Fall back to OCR for image-based PDFs
+                results = ocr_processor.process_file(
+                    temp_input_filepath,
+                    output_txt=output_txt_path,
+                    lang=lang
+                )
+                
+                # Combine text from all pages
+                all_pages_text = []
+                for page in results:
+                    all_pages_text.append(page['text'])
+                
+                extracted_text = "\n\n--- Page Break ---\n\n".join(all_pages_text)
+                pages_processed = len(results)
+                file_type_processed = "pdf_ocr"
+                
         elif filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.bmp', '.tiff')):
+            # Process image files using OCR
+            results = ocr_processor.process_file(
+                temp_input_filepath,
+                output_txt=output_txt_path,
+                lang=lang
+            )
+            
+            # Combine text from all pages
+            all_pages_text = []
+            for page in results:
+                all_pages_text.append(page['text'])
+            
+            extracted_text = "\n\n--- Page Break ---\n\n".join(all_pages_text)
+            pages_processed = len(results)
             file_type_processed = "image_ocr"
+        else:
+            return jsonify({"status": "error", "message": "Unsupported file type"}), 400
 
-        if extracted_text:
+        if extracted_text and extracted_text.strip():
             return jsonify({
                 "status": "success",
                 "message": "Extraction complete",
                 "file_type": file_type_processed,
-                "pages_processed": len(results),
+                "pages_processed": pages_processed,
                 "text_file": output_txt_filename
             }), 200
         else:

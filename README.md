@@ -1,67 +1,97 @@
-#  Doc Translate Template
+# OCR & Translation API
 
-This project is part of the Dabba Dabba Summer Internship (Model 2) and focuses on building a multilingual document translation engine combined with a dynamic form/template learning system.
+This project provides an Optical Character Recognition (OCR) and Translation service using **Tesseract** through RESTful APIs. It is containerized using **Docker** and can be easily launched via **Docker Compose**.
 
-##  Overview
+---
 
-The goal is to translate official documents (e.g., visa forms, certificates) between languages like English, French, Arabic, German, and Italian — while learning to recognize new templates by tagging fields through a user interface.
+## 🚀 Getting Started
 
-##  Project Structure 
+To run the services, make sure you have **Docker** and **Docker Compose** installed on your machine.
 
-doc-translate-template/
-
-├── data/               # Raw + processed documents
-
-├── models/             # Saved MarianMT models
-
-├── scripts/            # Translation and training scripts
-
-│   └── translate.py
-
-├── templates/          # Field mapping configs
-
-├── ui/                 # Streamlit/FastAPI (in progress)
-
-├── requirements.txt    # All required dependencies
-
-└── README.md
-
-##  Key Features
-
-- Multilingual translation using MarianMT (EN, FR, AR, etc.)
-- Fine-tuning on ~50 aligned document pairs
-- Field-level tagging using Label Studio
-- Template learning for reusable forms (e.g., visa applications)
-- Optional human validation layer for certified translations
-- UI (in development) to upload, tag, and visualize translation flow
-
-##  To run this project locally, follow these steps:
-
+### Run All Services
 ```bash
-git clone https://github.com/eya2105/doc-translate-template.git
-cd doc-translate-template
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -r requirements.txt
+docker-compose up --build
 ```
 
-##  Docker Setup
-
-To build and run the project using Docker:
-
+### Run Only the OCR Service
 ```bash
-docker-compose build --no-cache
-docker compose up
+docker-compose up ocr --build
 ```
 
-Once running, you can access:
+### Run Only the Translation Service
+```bash
+docker-compose up translate --build
+```
 
-- Label Studio UI at: [Link Text](http://localhost:8080)
+# OCR and Translation API
 
-- Translator API (if exposed) at: [Link Text](http://localhost:8080)
+## 📝 Usage
+All OCR and translation functionalities are exposed via POST requests. To use the OCR service, you must upload an image file and specify the language code for Tesseract.
 
-This will launch both:
+### OCR Request Example
+**Endpoint:**  
+`POST /ocr`
 
-- The translator service (FastAPI backend for translation)
+**Form Data (multipart/form-data):**
+- `file`: the image file to be processed
+- `lang`: the 3-letter language code (see supported languages below)
 
-- The labelstudio service (for tagging fields in documents)
+## 🌐 Supported Languages
+Below is the list of supported European, Arabic, and English languages along with their corresponding Tesseract language codes:
+
+| Language              | Code      |
+|-----------------------|-----------|
+| Arabic                | ara       |
+| English               | eng       |
+| English (Middle)      | enm       |
+| Albanian              | sqi       |
+| Basque                | eus       |
+| Belarusian            | bel       |
+| Bosnian               | bos       |
+| Bulgarian             | bul       |
+| Catalan               | cat       |
+| Croatian              | hrv       |
+| Czech                 | ces       |
+| Danish                | dan       |
+| Dutch                 | nld       |
+| Esperanto             | epo       |
+| Estonian              | est       |
+| Finnish               | fin       |
+| French                | fra       |
+| Frankish              | frk       |
+| French (Middle)       | frm       |
+| Galician              | glg       |
+| German                | deu       |
+| Greek                 | ell       |
+| Greek (Ancient)       | grc       |
+| Hungarian             | hun       |
+| Icelandic             | isl       |
+| Irish                 | gle       |
+| Italian               | ita       |
+| Italian (Old)         | ita_old   |
+| Latin                 | lat       |
+| Latvian               | lav       |
+| Lithuanian            | lit       |
+| Luxembourgish         | ltz       |
+| Macedonian            | mkd       |
+| Maltese               | mlt       |
+| Norwegian             | nor       |
+| Occitan               | oci       |
+| Polish                | pol       |
+| Portuguese            | por       |
+| Romanian              | ron       |
+| Russian               | rus       |
+| Serbian               | srp       |
+| Serbian (Latin)       | srp_latn  |
+| Slovak                | slk       |
+| Slovenian             | slv       |
+| Spanish               | spa       |
+| Spanish (Old)         | spa_old   |
+| Swedish               | swe       |
+| Ukrainian             | ukr       |
+| Welsh                 | cym       |
+
+## 📦 Tech Stack
+- Python + Flask
+- Tesseract OCR
+- Docker / Docker Compose

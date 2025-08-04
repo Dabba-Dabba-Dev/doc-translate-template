@@ -6,6 +6,7 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         tesseract-ocr \
+        tesseract-ocr-all \
         poppler-utils \
         libglib2.0-0 \
         libsm6 \
@@ -24,6 +25,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # 4. Application code (changes most frequently)
-COPY image_to_text.py .
+COPY . .
 
-CMD ["python", "image_to_text.py"]
+CMD ["python", "app.py"]

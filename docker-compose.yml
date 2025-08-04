@@ -19,8 +19,8 @@ services:
     build: ./ocr
     container_name: ocr
     volumes:
-      - ./ocr:/app
-    # Uncomment and set if you want to expose a port
-    # ports:
-    #   - "9000:9000"
+      - .:/app
+    working_dir: /app/ocr
+    # The command to run will be specified at runtime
+    command: python image_to_text.py
     restart: "no"

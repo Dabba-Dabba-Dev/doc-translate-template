@@ -1,11 +1,6 @@
-pytesseract==0.3.10
-pillow==9.5.0
-requests==2.31.0
-numpy<2
-matplotlib
-pyspellchecker==0.7.2
-beautifulsoup4==4.12.0
-lxml==4.9.3
-opencv-python-headless==4.8.0.76
-python-docx==0.8.11
-regex==2023.10.3
+opencv-python
+PyPDF2
+langdetect
+easyocr
+PyMuPDF
+numpy<2.0

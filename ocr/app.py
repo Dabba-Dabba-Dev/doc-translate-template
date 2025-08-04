@@ -37,8 +37,7 @@ def upload_file():
 
     # Get language parameter from form data or default to None
     lang = request.form.get('language', None)
-    if lang and len(lang.strip()) == 0:  # Handle empty string case
-        lang = None
+    os.environ['OCR_LANG'] = lang
 
     temp_input_filepath = None
     output_txt_filename = None

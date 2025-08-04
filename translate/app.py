@@ -1,6 +1,5 @@
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
-
 import torch
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 from flask import Flask, request, jsonify
@@ -97,8 +96,10 @@ def translate_extracted_text():
     """
     try:
         # Check if the extracted text file exists
-        extracted_text_path = os.path.join(os.getcwd(), "text_extracted.txt")
-        
+        extracted_text_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'text_extracted.txt'))
+        print(f"[DEBUG] Looking for extracted text at: {extracted_text_path}")
+        print(f"[DEBUG] File exists? {os.path.exists(extracted_text_path)}")
+
         if not os.path.exists(extracted_text_path):
             return jsonify({
                 "status": "error",

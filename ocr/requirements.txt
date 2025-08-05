@@ -1,6 +1,9 @@
-opencv-python
-PyPDF2
-langdetect
-easyocr
-PyMuPDF
-numpy<2.0
+weasyprint==52.5
+pytesseract==0.3.10
+language-tool-python==2.7.1
+beautifulsoup4==4.12.3
+googletrans==4.0.0-rc1
+spacy==3.7.4
+easyocr==1.7.1
+PyMuPDF==1.24.1
+python-doctr[torch]

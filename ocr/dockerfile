@@ -1,29 +1,21 @@
+# 1. Base Image
 FROM python:3.9-slim
+
+# 2. System Dependencies
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    tesseract-ocr \
+    poppler-utils \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# 1. System dependencies (stable layer)
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        tesseract-ocr \
-        poppler-utils \
-        libglib2.0-0 \
-        libsm6 \
-        libxrender1 \
-        libxext6 \
-        libgl1 && \
-    rm -rf /var/lib/apt/lists/*
-
-# 2. Core Python packages (independent installations)
-RUN pip install --no-cache-dir torch==2.2.0 --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir torchvision==0.17.0 --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir pdf2image==1.16.3
-
-# 3. Requirements (separate layer for better caching)
+# 3. Requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 4. Application code (changes most frequently)
-COPY ocr_processor.py .
+# 4. Application code
+COPY preform_ocr.py .
 
-CMD ["python", "image_to_text.py"]
+# 5. Entrypoint
+CMD ["python", "preform_ocr.py"]

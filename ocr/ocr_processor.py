@@ -1,10 +1,3 @@
-"""
-OCR Processing Module
-
-A modular OCR processor supporting EasyOCR and docTR with fallback mechanisms,
-text preprocessing, and confidence scoring.
-"""
-
 import os
 import cv2
 import numpy as np

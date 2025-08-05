@@ -67,25 +67,31 @@ class ImageOCR:
 if __name__ == "__main__":
     import sys
 
-    if len(sys.argv) > 1:
-        input_path = sys.argv[1]
-        output_file_path = "ocr_output1.txt"
+    if len(sys.argv) > 2:
+        output_dir = sys.argv[1]
+        input_path = sys.argv[2]
+
+        if not os.path.isdir(output_dir):
+            os.makedirs(output_dir)
 
         if os.path.exists(input_path):
             print(f"Processing {input_path}...")
             ocr_processor = ImageOCR(input_path)
             text, lang = ocr_processor.process_file()
-            
+
+            output_filename = os.path.splitext(os.path.basename(input_path))[0] + ".txt"
+            output_file_path = os.path.join(output_dir, output_filename)
+
             print(f"\nDetected Language: {lang}")
-            
+
             # Save the result to a .txt file
             with open(output_file_path, 'w', encoding='utf-8') as f:
                 f.write(text)
-                
+
             print(f"Successfully extracted text and saved it to {output_file_path}")
             print("\n--- Extracted Text ---")
             print(text)
         else:
             print(f"Error: File not found at {input_path}")
     else:
-        print("Usage: python image_to_text.py <path_to_file>")
+        print("Usage: python image_to_text.py <output_directory> <input_file>")

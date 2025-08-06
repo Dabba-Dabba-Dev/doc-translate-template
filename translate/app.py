@@ -1,10 +1,10 @@
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
+from load_translation_model import model, tokenizer
 import torch
 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 from flask import Flask, request, jsonify
 import traceback
-from load_model import model, tokenizer
 
 app = Flask(__name__)
 
@@ -146,8 +146,10 @@ def translate_extracted_text():
         )
 
         if translation_result["status"] == "success":
+            print("\n[TRANSLATION RESULT]")
+            print(translation_result["translated_text"])
             # Save translated text to a new file
-            translated_filename = f"text_translated_{target_language}.txt"
+            translated_filename = f"text_translated.txt"
             translated_path = os.path.join(os.getcwd(), translated_filename)
             
             with open(translated_path, 'w', encoding='utf-8') as f:

@@ -1,0 +1,335 @@
+[
+  {
+    "block_id": 1,
+    "block_text": "W\nr\no\nc\nt\na\nw\n,\n \n#\n0\n4\n.\n2\n0\n2\n5\nr\n \n(\nd\na\nt\na\n \nm\ni\ne\nj\ns\nc\ne\n)\n \nN\na\nz\nw\na\n \nf\ni\nr\nm\ny\n:\n \nM\nW\nI\nT\n \nE\nG\nR\nE\nG\nO\nR\nB\nU\nD\n \nS\np\n.\n \nZ\n \n0\n.\n0\n.\n \nN\nI\nP\n:\n \n8\n9\n7\n1\n8\n9\n4\n5\n1\n8",
+    "block_box": [
+      [
+        0.1215235792019347,
+        0.08468776732249786
+      ],
+      [
+        0.8694074969770254,
+        0.15397775876817793
+      ]
+    ],
+    "line_count": 5,
+    "estimated_font_height": 59.0,
+    "lines": [
+      {
+        "text": "Wroctaw, #04.2025r",
+        "normalized_box": [
+          [
+            0.7013301088270859,
+            0.08468776732249786
+          ],
+          [
+            0.8681983071342201,
+            0.10222412318220701
+          ]
+        ],
+        "boldness_score": 24.30512833595276,
+        "alignment_group": 1160
+      },
+      {
+        "text": "(data miejsce)",
+        "normalized_box": [
+          [
+            0.7617896009673518,
+            0.09923011120615911
+          ],
+          [
+            0.8694074969770254,
+            0.11505560307955517
+          ]
+        ],
+        "boldness_score": 23.64736658334732,
+        "alignment_group": 1260
+      },
+      {
+        "text": "Nazwa firmy: MWIT EGREGORBUD",
+        "normalized_box": [
+          [
+            0.1215235792019347,
+            0.10735671514114628
+          ],
+          [
+            0.42503022974607013,
+            0.1394354148845167
+          ]
+        ],
+        "boldness_score": 73.70817102491856,
+        "alignment_group": 200
+      },
+      {
+        "text": "Sp. Z 0.0.",
+        "normalized_box": [
+          [
+            0.4226118500604595,
+            0.12489307100085544
+          ],
+          [
+            0.49818621523579204,
+            0.14157399486740804
+          ]
+        ],
+        "boldness_score": 35.22618508338928,
+        "alignment_group": 700
+      },
+      {
+        "text": "NIP: 8971894518",
+        "normalized_box": [
+          [
+            0.1215235792019347,
+            0.13045337895637296
+          ],
+          [
+            0.2841596130592503,
+            0.15397775876817793
+          ]
+        ],
+        "boldness_score": 54.95122119784355,
+        "alignment_group": 200
+      }
+    ]
+  },
+  {
+    "block_id": 2,
+    "block_text": "A\nm\nb\na\ns\na\nd\na\n \nR\nz\ne\nc\nz\ny\np\no\ns\np\no\nl\ni\nt\ne\n)\n \nP\no\nl\ns\nk\ni\ne\ni",
+    "block_box": [
+      [
+        0.5562273276904474,
+        0.21385799828913601
+      ],
+      [
+        0.8724304715840387,
+        0.23011120615911035
+      ]
+    ],
+    "line_count": 1,
+    "estimated_font_height": 59.0,
+    "lines": [
+      {
+        "text": "Ambasada Rzeczypospolite) Polskiei",
+        "normalized_box": [
+          [
+            0.5562273276904474,
+            0.21385799828913601
+          ],
+          [
+            0.8724304715840387,
+            0.23011120615911035
+          ]
+        ],
+        "boldness_score": 27.562881072362263,
+        "alignment_group": 920
+      }
+    ]
+  },
+  {
+    "block_id": 3,
+    "block_text": "I\nN\nF\nO\nR\nM\nA\nC\nI\nA\n \no\n \nW\nA\nR\nU\nN\nK\nA\nC\nH\n \nZ\nA\nT\nR\nU\nD\nN\nI\nE\nN\nI\nA",
+    "block_box": [
+      [
+        0.29383313180169285,
+        0.2917023096663815
+      ],
+      [
+        0.6844014510278114,
+        0.3143712574850299
+      ]
+    ],
+    "line_count": 1,
+    "estimated_font_height": 59.0,
+    "lines": [
+      {
+        "text": "INFORMACIA o WARUNKACH ZATRUDNIENIA",
+        "normalized_box": [
+          [
+            0.29383313180169285,
+            0.2917023096663815
+          ],
+          [
+            0.6844014510278114,
+            0.3143712574850299
+          ]
+        ],
+        "boldness_score": 46.00800333917141,
+        "alignment_group": 480
+      }
+    ]
+  },
+  {
+    "block_id": 4,
+    "block_text": "I\nn\nf\no\nr\nm\nu\nj\ne\n.\n \nz\ne\n \nw\na\nr\nu\nn\nk\ni\n \nn\na\n \nj\na\nk\ni\nc\nh\n \nb\ne\nd\nz\ni\ne\n \nz\na\nt\nr\nu\nd\nn\ni\no\nn\ny\n \nP\na\nn\n \nM\nO\nH\nA\nM\nE\nD\n \nA\nM\nI\nN\n \nB\nO\nU\nJ\nL\nI\nD\nA\n \np\na\ns\nz\np\no\nr\nt\n \nn\nr\n \nN\nI\n2\n5\n5\n4\n0\n \ns\na\n \nn\na\ns\nt\ne\np\nu\nj\na\nc\ne\nr\n \n1\n.\n2\n \nZ\na\nt\nr\nu\nd\nn\ni\ne\nn\ni\ne\n \nn\na\n \nu\nm\no\nw\ni\ne\n \no\n \np\nr\na\nc\ne\n.\n \n2\n.\n \nW\ny\nn\na\ng\nr\no\nd\nz\ne\nn\ni\ne\n \np\nl\na\nt\nn\ne\n \n6\n0\n0\n0\n \nz\ni\n \nb\nr\nu\nt\nt\no\n/\nm\ni\ne\ns\ni\ne\nc\nz\nn\ni\ne\n,\n \n3\n.\n \nU\nr\ni\no\np\n \nw\ny\np\no\nc\nz\ny\nn\nk\no\nw\ny\n \n-\n \nu\nd\nz\ni\ne\nl\na\nn\ny\n \nz\ng\no\nd\nn\ni\ne\n \nz\n \np\no\nl\ns\nk\ni\nm\n \nK\no\nd\ne\nk\ns\ne\nm\n \nP\nr\na\nc\ny\n,\n \n4\n.\n \nU\nb\ne\nz\np\ni\ne\nc\nz\ne\nn\ni\ne\n \nz\nd\nr\no\nw\no\nt\nn\ne\n \nN\nF\nZ\nI\nZ\nU\nS\n \n-\n \no\np\nl\na\nc\na\nn\ne\n \np\nr\nz\ne\nz\n \np\nr\na\nc\no\nd\na\nw\nc\ne\n.",
+    "block_box": [
+      [
+        0.08948004836759371,
+        0.33361847733105215
+      ],
+      [
+        0.7950423216444982,
+        0.47946963216424293
+      ]
+    ],
+    "line_count": 6,
+    "estimated_font_height": 59.0,
+    "lines": [
+      {
+        "text": "Informuje. ze warunki na jakich bedzie zatrudniony Pan MOHAMED AMIN BOUJLIDA",
+        "normalized_box": [
+          [
+            0.1033857315598549,
+            0.33361847733105215
+          ],
+          [
+            0.7950423216444982,
+            0.36227544910179643
+          ]
+        ],
+        "boldness_score": 66.12099805203351,
+        "alignment_group": 180
+      },
+      {
+        "text": "paszport nr NI25540 sa nastepujacer",
+        "normalized_box": [
+          [
+            0.10519951632406288,
+            0.360136869118905
+          ],
+          [
+            0.4207980652962515,
+            0.3853721129170231
+          ]
+        ],
+        "boldness_score": 46.36843740940094,
+        "alignment_group": 180
+      },
+      {
+        "text": "1.2 Zatrudnienie na umowie o prace.",
+        "normalized_box": [
+          [
+            0.09673518742442563,
+            0.3798118049615056
+          ],
+          [
+            0.40326481257557434,
+            0.40804106073567153
+          ]
+        ],
+        "boldness_score": 60.6423779129982,
+        "alignment_group": 160
+      },
+      {
+        "text": "2. Wynagrodzenie platne 6000 zi brutto/miesiecznie,",
+        "normalized_box": [
+          [
+            0.09552599758162031,
+            0.40290846877673225
+          ],
+          [
+            0.5423216444981862,
+            0.43327630453378957
+          ]
+        ],
+        "boldness_score": 64.93252357840538,
+        "alignment_group": 160
+      },
+      {
+        "text": "3. Uriop wypoczynkowy - udzielany zgodnie z polskim Kodeksem Pracy,",
+        "normalized_box": [
+          [
+            0.08948004836759371,
+            0.4264328485885372
+          ],
+          [
+            0.6928657799274486,
+            0.4576561163387511
+          ]
+        ],
+        "boldness_score": 69.90487857460975,
+        "alignment_group": 140
+      },
+      {
+        "text": "4. Ubezpieczenie zdrowotne NFZIZUS - oplacane przez pracodawce.",
+        "normalized_box": [
+          [
+            0.08948004836759371,
+            0.4499572284003422
+          ],
+          [
+            0.6650544135429263,
+            0.47946963216424293
+          ]
+        ],
+        "boldness_score": 64.31495846807957,
+        "alignment_group": 140
+      }
+    ]
+  },
+  {
+    "block_id": 5,
+    "block_text": "I\nn\nf\no\nr\nm\nu\ni\ne\n.\n \nz\ne\n \nn\na\nd\na\nl\no\nc\nz\ne\nk\nu\ni\ne\n \nn\na\n \np\nr\nz\ny\nb\ny\nc\ni\ne\n \nt\ne\ng\no\np\nr\na\nc\no\nw\nn\ni\nk\na",
+    "block_box": [
+      [
+        0.07859733978234583,
+        0.5201026518391788
+      ],
+      [
+        0.5743651753325272,
+        0.5517536355859709
+      ]
+    ],
+    "line_count": 1,
+    "estimated_font_height": 59.0,
+    "lines": [
+      {
+        "text": "Informuie. ze nadaloczekuie na przybycie tegopracownika",
+        "normalized_box": [
+          [
+            0.07859733978234583,
+            0.5201026518391788
+          ],
+          [
+            0.5743651753325272,
+            0.5517536355859709
+          ]
+        ],
+        "boldness_score": 58.63036399086316,
+        "alignment_group": 120
+      }
+    ]
+  },
+  {
+    "block_id": 6,
+    "block_text": "-",
+    "block_box": [
+      [
+        0.5550181378476421,
+        0.6236099230111206
+      ],
+      [
+        0.5731559854897219,
+        0.6364414029084687
+      ]
+    ],
+    "line_count": 1,
+    "estimated_font_height": 59.0,
+    "lines": [
+      {
+        "text": "-",
+        "normalized_box": [
+          [
+            0.5550181378476421,
+            0.6236099230111206
+          ],
+          [
+            0.5731559854897219,
+            0.6364414029084687
+          ]
+        ],
+        "boldness_score": 26.992807388305664,
+        "alignment_group": 920
+      }
+    ]
+  }
+]

@@ -1,20 +1,22 @@
 services:
   translator:
     build:
-      context: .                   
+      context: .
       dockerfile: translate/Dockerfile
     container_name: translator
     ports:
-      - "5001:5000"
+      - "5001:5001"
     restart: "no"
 
-
-
   ocr:
-    build: ./ocr
+    build:
+      context: .
+      dockerfile: ocr/Dockerfile
     container_name: ocr
     volumes:
-      - ./ocr:/app
+    - ./ocr:/app/ocr
+    - ./data/output_docs:/app/data/output_docs
+    - ./debug_results:/app/debug_results
     ports:
       - "5000:5000"
     restart: "no"

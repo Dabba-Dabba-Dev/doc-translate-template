@@ -1,0 +1,204 @@
+import os
+import json
+from PIL import Image, ImageOps
+from layout_combined_enhanced import EnhancedDocumentReconstructor
+from file_utils import pdf_to_images
+from ocr_engine import extract_blocks_with_boxes
+from fpdf import FPDF
+import requests
+from flask import send_file
+from flask import Flask, request, jsonify
+import traceback
+
+app = Flask(__name__)
+def translate_line_remote(text, src_lang, tgt_lang):
+    try:
+        resp = requests.post(
+            "http://translator:5001/translate",
+            json={"text": text, "src_lang": src_lang, "tgt_lang": tgt_lang}
+        )
+        resp.raise_for_status()
+        return resp.json().get("translated", "[Translation Failed]")
+    except Exception as e:
+        print("Translation API call failed:", e)
+        return "[Translation Failed]"
+@app.route("/process", methods=["POST"])
+def process_document():
+    try:
+        file = request.files.get("file")
+        src_lang = request.form.get("src_lang", "pl_PL")
+        tgt_lang = request.form.get("tgt_lang", "en_XX")
+
+        if not file:
+            return jsonify({"error": "No file uploaded"}), 400
+
+        # Save uploaded file
+        input_pdf_path = os.path.join("/tmp", file.filename)
+        file.save(input_pdf_path)
+
+        global INPUT_PDF, PDF_BASENAME, TEMP_IMAGE_DIR, OCR_OUTPUT_DIR, TRANSLATION_OUTPUT_DIR, LAYOUT_OUTPUT_DIR, LAYOUT_DEBUG_DIR, FINAL_PDF_OUTPUT
+        INPUT_PDF = input_pdf_path
+        PDF_BASENAME = os.path.splitext(os.path.basename(INPUT_PDF))[0]
+        TEMP_IMAGE_DIR = f"debug_results/pdf_pages/{PDF_BASENAME}"
+        OCR_OUTPUT_DIR = f"debug_results/batch_results/{PDF_BASENAME}"
+        TRANSLATION_OUTPUT_DIR = f"debug_results/translated/{PDF_BASENAME}"
+        LAYOUT_OUTPUT_DIR = f"debug_results/combined_output/{PDF_BASENAME}"
+        LAYOUT_DEBUG_DIR = f"debug_results/combined_debug/{PDF_BASENAME}"
+        FINAL_PDF_OUTPUT = f"data/output_docs/{PDF_BASENAME}_final_output.pdf"
+    
+        output_dir = os.path.dirname(FINAL_PDF_OUTPUT)
+        os.makedirs(output_dir, exist_ok=True)
+        # Run pipeline with passed langs
+        image_paths = step1_pdf_to_images()
+        step2_apply_ocr(image_paths)
+        step3_translate_with_lang(src_lang, tgt_lang)
+        step4_reconstruct_layout()
+        step5_images_to_pdf()
+
+        return jsonify({"message": "Processing complete", "download_url": "/download-final-pdf"})
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+
+
+
+def step1_pdf_to_images():
+    os.makedirs(TEMP_IMAGE_DIR, exist_ok=True)
+    images = pdf_to_images(INPUT_PDF)
+    image_paths = []
+
+    for idx, image in enumerate(images):
+        image_filename = f"page_{PDF_BASENAME}_{idx + 1}.jpg"
+        image_path = os.path.join(TEMP_IMAGE_DIR, image_filename)
+        image.save(image_path)
+        image_paths.append(image_path)
+        print(f"[Step 1] Saved page {idx + 1} to {image_path}")
+    
+    return image_paths
+
+
+def step2_apply_ocr(image_paths):
+    os.makedirs(OCR_OUTPUT_DIR, exist_ok=True)
+    
+    for image_path in image_paths:
+        try:
+            image = Image.open(image_path)
+            image = ImageOps.exif_transpose(image)
+
+            base_name = os.path.splitext(os.path.basename(image_path))[0]
+            overlay_path = os.path.join(OCR_OUTPUT_DIR, f"{base_name}_overlay.png")
+            json_path = os.path.join(OCR_OUTPUT_DIR, f"{base_name}.json")
+
+            ocr_results = extract_blocks_with_boxes(image, image_path=overlay_path)
+
+            with open(json_path, "w", encoding='utf-8') as f:
+                json.dump(ocr_results, f, ensure_ascii=False, indent=2)
+
+            print(f"[Step 2] OCR complete: {json_path}")
+
+        except Exception as e:
+            print(f"[ERROR] OCR failed for {image_path}: {e}")
+
+def step3_translate_with_lang(src_lang, tgt_lang):
+    os.makedirs(TRANSLATION_OUTPUT_DIR, exist_ok=True)
+    json_files = [f for f in os.listdir(OCR_OUTPUT_DIR) if f.endswith(".json")]
+
+    for file_name in json_files:
+        input_path = os.path.join(OCR_OUTPUT_DIR, file_name)
+        output_path = os.path.join(TRANSLATION_OUTPUT_DIR, file_name)
+
+        with open(input_path, "r", encoding="utf-8") as f:
+            ocr_data = json.load(f)
+
+        texts = [item["block_text"] for item in ocr_data if item.get("block_text")]
+        translated_texts = []
+
+        for idx, text in enumerate(texts):
+            print(f"[Step 3] Translating block {idx + 1}/{len(texts)}...")
+            lines = text.split("\n")
+            translated_lines = [
+                translate_line_remote(line, src_lang, tgt_lang) for line in lines
+            ]
+            translated_block = "\n".join(translated_lines)
+            translated_texts.append({"original": text, "translated": translated_block})
+
+        with open(output_path, "w", encoding="utf-8") as f:
+            json.dump(translated_texts, f, ensure_ascii=False, indent=2)
+
+        print(f"[Step 3] Translation saved: {output_path}")
+
+def step4_reconstruct_layout():
+    reconstructor = EnhancedDocumentReconstructor()
+    os.makedirs(LAYOUT_OUTPUT_DIR, exist_ok=True)
+    
+    ocr_files = [f for f in os.listdir(OCR_OUTPUT_DIR) if f.endswith(".json")]
+
+    for ocr_file in ocr_files:
+        ocr_path = os.path.join(OCR_OUTPUT_DIR, ocr_file)
+        translation_path = os.path.join(TRANSLATION_OUTPUT_DIR, ocr_file)
+        base_name = os.path.splitext(ocr_file)[0]
+
+        if not os.path.exists(translation_path):
+            print(f"[Step 4] Missing translation file for {ocr_file}")
+            continue
+
+        try:
+            ocr_data, translation_data = reconstructor.load_data(ocr_path, translation_path)
+
+            
+            final_path = os.path.join(LAYOUT_OUTPUT_DIR, f"{base_name}_combined.png")
+
+            
+            reconstructor.reconstruct_document(ocr_data, translation_data, output_path=final_path, debug_mode=False)
+
+            print(f"[Step 4] Layout built: {final_path}")
+
+        except Exception as e:
+            print(f"[ERROR] Reconstruction failed for {ocr_file}: {e}")
+
+def step5_images_to_pdf():
+    pdf = FPDF(unit='pt', format=[2480, 3508])
+
+    if not os.path.exists(LAYOUT_OUTPUT_DIR):
+        print(f"[Step 5] No layout directory found at {LAYOUT_OUTPUT_DIR}")
+        return
+
+    image_files = sorted([
+        os.path.join(LAYOUT_OUTPUT_DIR, f)
+        for f in os.listdir(LAYOUT_OUTPUT_DIR)
+        if f.lower().endswith(".png") and os.path.isfile(os.path.join(LAYOUT_OUTPUT_DIR, f))
+    ])
+
+    if not image_files:
+        print(f"[Step 5] No PNG images found in {LAYOUT_OUTPUT_DIR}")
+        return
+
+    for image_path in image_files:
+        image = Image.open(image_path)
+        image_rgb = image.convert("RGB")
+        tmp_path = image_path.replace(".png", "_rgb.jpg")
+        image_rgb.save(tmp_path, format="JPEG")
+
+        pdf.add_page()
+        pdf.image(tmp_path, x=0, y=0, w=2480, h=3508)
+
+    pdf.output(FINAL_PDF_OUTPUT)
+    print(f"[Step 5] Final PDF saved to {FINAL_PDF_OUTPUT}")
+
+
+@app.route("/download-final-pdf", methods=["GET"])
+def download_final_pdf():
+    try:
+        return send_file(
+            FINAL_PDF_OUTPUT,
+            mimetype='application/pdf',
+            as_attachment=True,
+            download_name=os.path.basename(FINAL_PDF_OUTPUT)
+        )
+    except Exception as e:
+        return jsonify({"error": str(e)}), 404
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)

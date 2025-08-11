@@ -58,7 +58,7 @@ def segment_sentences_nltk(text, language='german'):
     # Join sentences with a single \n so you get proper sentence breaks
     return "\n".join(sentences)
 
-def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignment_tolerance=20):
+def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignment_tolerance=20, src_lang="en_XX"):
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         pil_image.save(tmp.name)
         tmp_path = tmp.name
@@ -138,11 +138,33 @@ def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignm
 
     output = []
     colors = ["red", "blue", "green", "orange", "purple", "brown", "pink", "gray"]
+    NLTK_LANG_MAP = {
+    "en_XX": "english",
+    "en_GB": "english",
+    "en_US": "english",
+    "fr_FR": "french",
+    "es_ES": "spanish",
+    "pt_PT": "portuguese",
+    "it_IT": "italian",
+    "de_DE": "german",
+    "nl_NL": "dutch",
+    "sv_SE": "swedish",
+    "da_DK": "danish",
+    "no_NO": "norwegian",
+    "pl_PL": "polish",
+    "sl_SI": "slovene",
+    "ru_RU": "russian",
+    "tr_TR": "turkish",
+    "el_GR": "greek",
+    "ar_AR": "arabic"
+}
 
+
+    nltk_lang = NLTK_LANG_MAP.get(src_lang, "english")
     for idx, block in enumerate(merged_blocks):
         raw_block_text = "\n".join([line["text"] for line in block])
         # Apply sentence segmentation to get cleaner line breaks
-        block_text = segment_sentences_nltk(raw_block_text, language='polish')  # or 'english', etc.
+        block_text = segment_sentences_nltk(raw_block_text, language=nltk_lang)  # or 'english', etc.
 
 
         x_min = min(line["box"][0] for line in block)

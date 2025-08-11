@@ -24,62 +24,65 @@ def translate_line_remote(text, src_lang, tgt_lang):
         return "[Translation Failed]"
 @app.route("/process", methods=["POST"])
 def process_document():
-    try:
-        file = request.files.get("file")
-        src_lang = request.form.get("src_lang", "pl_PL")
-        tgt_lang = request.form.get("tgt_lang", "en_XX")
-
-        if not file:
-            return jsonify({"error": "No file uploaded"}), 400
-
-        # Save uploaded file
-        input_pdf_path = os.path.join("/tmp", file.filename)
-        file.save(input_pdf_path)
-
-        global INPUT_PDF, PDF_BASENAME, TEMP_IMAGE_DIR, OCR_OUTPUT_DIR, TRANSLATION_OUTPUT_DIR, LAYOUT_OUTPUT_DIR, LAYOUT_DEBUG_DIR, FINAL_PDF_OUTPUT
-        INPUT_PDF = input_pdf_path
-        PDF_BASENAME = os.path.splitext(os.path.basename(INPUT_PDF))[0]
-        TEMP_IMAGE_DIR = f"debug_results/pdf_pages/{PDF_BASENAME}"
-        OCR_OUTPUT_DIR = f"debug_results/batch_results/{PDF_BASENAME}"
-        TRANSLATION_OUTPUT_DIR = f"debug_results/translated/{PDF_BASENAME}"
-        LAYOUT_OUTPUT_DIR = f"debug_results/combined_output/{PDF_BASENAME}"
-        LAYOUT_DEBUG_DIR = f"debug_results/combined_debug/{PDF_BASENAME}"
-        FINAL_PDF_OUTPUT = f"data/output_docs/{PDF_BASENAME}_final_output.pdf"
     
-        output_dir = os.path.dirname(FINAL_PDF_OUTPUT)
-        os.makedirs(output_dir, exist_ok=True)
-        # Run pipeline with passed langs
-        image_paths = step1_pdf_to_images()
-        step2_apply_ocr(image_paths)
-        step3_translate_with_lang(src_lang, tgt_lang)
-        step4_reconstruct_layout()
-        step5_images_to_pdf()
+    file = request.files.get("file")
+    src_lang = request.form.get("src_lang", "pl_PL")
+    tgt_lang = request.form.get("tgt_lang", "en_XX")
+    if not file:
+        return jsonify({"error": "No file uploaded"}), 400
+    # Use fixed standard filenames/paths for overwriting
+    global INPUT_PDF, PDF_BASENAME, TEMP_IMAGE_DIR, OCR_OUTPUT_DIR, TRANSLATION_OUTPUT_DIR, LAYOUT_OUTPUT_DIR, FINAL_PDF_OUTPUT
 
-        return jsonify({"message": "Processing complete", "download_url": "/download-final-pdf"})
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+    INPUT_PDF = "/tmp/input.pdf"
+    TEMP_IMAGE_DIR = "debug_results/temp_images"
+    OCR_OUTPUT_DIR = "debug_results/ocr_results"
+    TRANSLATION_OUTPUT_DIR = "debug_results/translated_results"
+    LAYOUT_OUTPUT_DIR = "debug_results/layout_output"
+    FINAL_PDF_OUTPUT = "data/output_docs/final_output.pdf"
+    # Save uploaded file as fixed input.pdf (regardless of uploaded name)
+    file.save(INPUT_PDF)
+    # Make sure directories exist (will overwrite contents each time)
+    os.makedirs(TEMP_IMAGE_DIR, exist_ok=True)
+    os.makedirs(OCR_OUTPUT_DIR, exist_ok=True)
+    os.makedirs(TRANSLATION_OUTPUT_DIR, exist_ok=True)
+    os.makedirs(LAYOUT_OUTPUT_DIR, exist_ok=True)
+    os.makedirs(os.path.dirname(FINAL_PDF_OUTPUT), exist_ok=True)
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext == ".pdf":
+        # convert pdf pages to images (saved in TEMP_IMAGE_DIR)
+        image_paths = step1_pdf_to_images()
+    else:
+        # handle single image file
+        from PIL import Image, ImageOps
+        img = Image.open(INPUT_PDF)
+        img = ImageOps.exif_transpose(img)
+        image_path = os.path.join(TEMP_IMAGE_DIR, "input.jpg")
+        img.convert("RGB").save(image_path, "JPEG")
+        image_paths = [image_path]
+    # Process the pipeline steps
+    step2_apply_ocr(image_paths, src_lang)
+    step3_translate_with_lang(src_lang, tgt_lang)
+    step4_reconstruct_layout()
+    step5_images_to_pdf()
+    return jsonify({"message": "Processing complete", "download_url": "/download-final-pdf"})
+
 
 
 
 
 
 def step1_pdf_to_images():
-    os.makedirs(TEMP_IMAGE_DIR, exist_ok=True)
     images = pdf_to_images(INPUT_PDF)
     image_paths = []
-
     for idx, image in enumerate(images):
-        image_filename = f"page_{PDF_BASENAME}_{idx + 1}.jpg"
+        image_filename = f"page_{idx + 1}.jpg"  # fixed names, overwrite each time
         image_path = os.path.join(TEMP_IMAGE_DIR, image_filename)
         image.save(image_path)
         image_paths.append(image_path)
         print(f"[Step 1] Saved page {idx + 1} to {image_path}")
-    
     return image_paths
 
-
-def step2_apply_ocr(image_paths):
+def step2_apply_ocr(image_paths, src_lang):
     os.makedirs(OCR_OUTPUT_DIR, exist_ok=True)
     
     for image_path in image_paths:
@@ -91,7 +94,7 @@ def step2_apply_ocr(image_paths):
             overlay_path = os.path.join(OCR_OUTPUT_DIR, f"{base_name}_overlay.png")
             json_path = os.path.join(OCR_OUTPUT_DIR, f"{base_name}.json")
 
-            ocr_results = extract_blocks_with_boxes(image, image_path=overlay_path)
+            ocr_results = extract_blocks_with_boxes(image, image_path=overlay_path,  src_lang=src_lang)
 
             with open(json_path, "w", encoding='utf-8') as f:
                 json.dump(ocr_results, f, ensure_ascii=False, indent=2)

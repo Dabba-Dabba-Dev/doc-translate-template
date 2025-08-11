@@ -15,3 +15,5 @@ ocr/image_to_text.py ocr/output.txt
 ocr/output.txt
 ocr/*.docx
 ocr/text_extracted.txt
+data/output_docs
+debug_results

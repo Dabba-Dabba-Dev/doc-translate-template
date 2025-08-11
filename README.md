@@ -37,61 +37,33 @@ All OCR and translation functionalities are exposed via POST requests. To use th
 - `lang`: the 3-letter language code (see supported languages below)
 
 ## 🌐 Supported Languages
-Below is the list of supported European, Arabic, and English languages along with their corresponding Tesseract language codes:
+Below is the list of supported European, Arabic, and English languages along with their corresponding mbart language codes:
 
-| Language              | Code      |
-|-----------------------|-----------|
-| Arabic                | ara       |
-| English               | eng       |
-| English (Middle)      | enm       |
-| Albanian              | sqi       |
-| Basque                | eus       |
-| Belarusian            | bel       |
-| Bosnian               | bos       |
-| Bulgarian             | bul       |
-| Catalan               | cat       |
-| Croatian              | hrv       |
-| Czech                 | ces       |
-| Danish                | dan       |
-| Dutch                 | nld       |
-| Esperanto             | epo       |
-| Estonian              | est       |
-| Finnish               | fin       |
-| French                | fra       |
-| Frankish              | frk       |
-| French (Middle)       | frm       |
-| Galician              | glg       |
-| German                | deu       |
-| Greek                 | ell       |
-| Greek (Ancient)       | grc       |
-| Hungarian             | hun       |
-| Icelandic             | isl       |
-| Irish                 | gle       |
-| Italian               | ita       |
-| Italian (Old)         | ita_old   |
-| Latin                 | lat       |
-| Latvian               | lav       |
-| Lithuanian            | lit       |
-| Luxembourgish         | ltz       |
-| Macedonian            | mkd       |
-| Maltese               | mlt       |
-| Norwegian             | nor       |
-| Occitan               | oci       |
-| Polish                | pol       |
-| Portuguese            | por       |
-| Romanian              | ron       |
-| Russian               | rus       |
-| Serbian               | srp       |
-| Serbian (Latin)       | srp_latn  |
-| Slovak                | slk       |
-| Slovenian             | slv       |
-| Spanish               | spa       |
-| Spanish (Old)         | spa_old   |
-| Swedish               | swe       |
-| Ukrainian             | ukr       |
-| Welsh                 | cym       |
-
-## 📦 Tech Stack
-- Python + Flask
-- Tesseract OCR
-- Docker / Docker Compose
+| Language              | MBART Language Code |
+| --------------------- | ------------------- |
+| English               | `en_XX`              |
+| French                | `fr_XX`              |
+| German                | `de_DE`              |
+| Spanish               | `es_XX`              |
+| Italian               | `it_IT`              |
+| Portuguese (European) | `pt_XX`              |
+| Dutch                 | `nl_XX`              |
+| Polish                | `pl_PL`              |
+| Romanian              | `ro_RO`              |
+| Russian               | `ru_RU`              |
+| Ukrainian             | `uk_UA`              |
+| Bulgarian             | `bg_BG`              |
+| Czech                 | `cs_CZ`              |
+| Danish                | `da_DK`              |
+| Finnish               | `fi_FI`              |
+| Greek                 | `el_GR`              |
+| Hungarian             | `hu_HU`              |
+| Latvian               | `lv_LV`              |
+| Lithuanian            | `lt_LT`              |
+| Norwegian             | `nb_NO`              |
+| Slovak                | `sk_SK`              |
+| Slovenian             | `sl_SI`              |
+| Swedish               | `sv_SE`              |
+| Croatian              | `hr_HR`              |
+| Serbian (Latin)       | `sr_Latn_RS`         |
+| Arabic                | `ar_AR`              |

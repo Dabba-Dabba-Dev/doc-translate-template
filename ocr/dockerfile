@@ -6,6 +6,7 @@ WORKDIR /app
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         tesseract-ocr \
+        tesseract-ocr-all \
         poppler-utils \
         libglib2.0-0 \
         libsm6 \
@@ -22,8 +23,22 @@ RUN pip install --no-cache-dir pdf2image==1.16.3
 # 3. Requirements (separate layer for better caching)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir transformers python-doctr[torch]
+RUN pip uninstall -y numpy \
+ && pip install --no-cache-dir "numpy<2" fpdf
+RUN python -c "from doctr.models import ocr_predictor; ocr_predictor(pretrained=True)"
+RUN pip install --no-cache-dir groq phidata
+RUN pip install --no-cache-dir nltk
+
+# Download punkt data
+RUN python -m nltk.downloader punkt punkt_tab
 
 # 4. Application code (changes most frequently)
-COPY image_to_text.py .
+COPY ocr/ocr_engine.py .
+COPY ocr/main_pipeline.py .
+COPY ocr/layout_combined_enhanced.py .
+COPY ocr/utils/file_utils.py .
+COPY translate/app.py .
+COPY translate/load_translation_model.py .
 
-CMD ["python", "image_to_text.py"]
+CMD ["python", "main_pipeline.py"]

@@ -1,26 +1,22 @@
 services:
   translator:
-    build: ./translate
+    build:
+      context: .
+      dockerfile: translate/Dockerfile
     container_name: translator
     ports:
-      - "8000:8000"
-    restart: "no"
-
-  labelstudio:
-    image: heartexlabs/label-studio:latest
-    container_name: labelstudio
-    ports:
-      - "8080:8080"
-    environment:
-      - LABEL_STUDIO_LOCAL_FILES_SERVING_ENABLED=true
+      - "5001:5001"
     restart: "no"
 
   ocr:
-    build: ./ocr
+    build:
+      context: .
+      dockerfile: ocr/Dockerfile
     container_name: ocr
     volumes:
-      - ./ocr:/app
-    # Uncomment and set if you want to expose a port
-    # ports:
-    #   - "9000:9000"
+    - ./ocr:/app/ocr
+    - ./data/output_docs:/app/data/output_docs
+    - ./debug_results:/app/debug_results
+    ports:
+      - "5000:5000"
     restart: "no"

@@ -5,13 +5,7 @@ from PIL import Image, ImageDraw, ImageOps
 from doctr.io import DocumentFile
 from doctr.models import ocr_predictor
 import numpy as np
-import nltk
-nltk.download('punkt')
-nltk.download('punkt_tab')    
-from nltk.tokenize import sent_tokenize
 import re
-
-
 
 ocr_model = ocr_predictor(pretrained=True)
 
@@ -49,14 +43,12 @@ def should_merge_blocks(block1, block2, font_height, typical_spacing, alignment_
         return False
 
     return condition1 or condition2
-def segment_sentences_nltk(text, language='german'):
-    text = re.sub(r'-\n', '', text)
-    text = re.sub(r'(\d+)\.\n', r'\1. ', text)
-    # Remove forced line breaks so sentence tokenizer works better
-    clean_text = text.replace('\n', ' ')
-    sentences = sent_tokenize(clean_text, language=language)
-    # Join sentences with a single \n so you get proper sentence breaks
-    return "\n".join(sentences)
+
+def clean_text(text):
+    """Basic text cleaning without sentence segmentation"""
+    text = re.sub(r'-\n', '', text)  # Remove hyphenated line breaks
+    text = re.sub(r'(\d+)\.\n', r'\1. ', text)  # Fix numbered lists
+    return text.replace('\n', ' ')  # Replace all newlines with spaces
 
 def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignment_tolerance=20, src_lang="en_XX"):
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
@@ -138,34 +130,10 @@ def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignm
 
     output = []
     colors = ["red", "blue", "green", "orange", "purple", "brown", "pink", "gray"]
-    NLTK_LANG_MAP = {
-    "en_XX": "english",
-    "en_GB": "english",
-    "en_US": "english",
-    "fr_FR": "french",
-    "es_ES": "spanish",
-    "pt_PT": "portuguese",
-    "it_IT": "italian",
-    "de_DE": "german",
-    "nl_NL": "dutch",
-    "sv_SE": "swedish",
-    "da_DK": "danish",
-    "no_NO": "norwegian",
-    "pl_PL": "polish",
-    "sl_SI": "slovene",
-    "ru_RU": "russian",
-    "tr_TR": "turkish",
-    "el_GR": "greek",
-    "ar_AR": "arabic"
-}
 
-
-    nltk_lang = NLTK_LANG_MAP.get(src_lang, "english")
     for idx, block in enumerate(merged_blocks):
-        raw_block_text = "\n".join([line["text"] for line in block])
-        # Apply sentence segmentation to get cleaner line breaks
-        block_text = segment_sentences_nltk(raw_block_text, language=nltk_lang)  # or 'english', etc.
-
+        # Join lines with spaces (no sentence segmentation)
+        block_text = " ".join([line["text"] for line in block])
 
         x_min = min(line["box"][0] for line in block)
         y_min = min(line["box"][1] for line in block)

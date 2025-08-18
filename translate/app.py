@@ -8,19 +8,19 @@ import traceback
 
 app = Flask(__name__)
 
-def translate_line(text, src_lang="deu_XX", tgt_lang="en_XX"):  
+def translate_line(text, src_lang, tgt_lang="en_XX"):  
     if not text.strip():
         return ""
     tokenizer.src_lang = src_lang  
     inputs = tokenizer(text, return_tensors="pt")
     translated_tokens = model.generate(
-            **inputs,
-            forced_bos_token_id=tokenizer.lang_code_to_id[tgt_lang],
-            no_repeat_ngram_size=3,   # prevents repeating 3-grams
-            repetition_penalty=2.0,   # penalizes repeated tokens
-            max_length=200,           # restrict maximum length
-            early_stopping=True       # stop when end token found
-        )
+        **inputs,
+        forced_bos_token_id=tokenizer.lang_code_to_id[tgt_lang],
+        no_repeat_ngram_size=3,
+        repetition_penalty=2.5,
+        early_stopping=True,
+        num_beams=5
+    )
 
     return tokenizer.decode(translated_tokens[0], skip_special_tokens=True)
 
@@ -28,7 +28,9 @@ def translate_line(text, src_lang="deu_XX", tgt_lang="en_XX"):
 def translate():
     data = request.json
     text = data.get("text", "")
-    translated = translate_line(text)
+    src_lang = data.get("src_lang", "por_XX")  # default Portuguese
+    tgt_lang = data.get("tgt_lang", "en_XX")   # default English
+    translated = translate_line(text, src_lang, tgt_lang)
     return jsonify({"translated": translated})
 
 if __name__ == "__main__":

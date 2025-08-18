@@ -9,6 +9,22 @@ import requests
 from flask import send_file
 from flask import Flask, request, jsonify
 import traceback
+import shutil
+
+def clean_directory(path):
+    """Delete all contents of a directory but keep the directory itself."""
+    if os.path.exists(path):
+        for filename in os.listdir(path):
+            file_path = os.path.join(path, filename)
+            try:
+                if os.path.isfile(file_path) or os.path.islink(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+            except Exception as e:
+                print(f"Failed to delete {file_path}: {e}")
+    else:
+        os.makedirs(path, exist_ok=True)
 
 app = Flask(__name__)
 def translate_line_remote(text, src_lang, tgt_lang):
@@ -24,32 +40,41 @@ def translate_line_remote(text, src_lang, tgt_lang):
         return "[Translation Failed]"
 @app.route("/process", methods=["POST"])
 def process_document():
-    
-    file = request.files.get("file")
-    src_lang = request.form.get("src_lang", "pl_PL")
-    tgt_lang = request.form.get("tgt_lang", "en_XX")
-    if not file:
-        return jsonify({"error": "No file uploaded"}), 400
-    # Use fixed standard filenames/paths for overwriting
-    global INPUT_PDF, PDF_BASENAME, TEMP_IMAGE_DIR, OCR_OUTPUT_DIR, TRANSLATION_OUTPUT_DIR, LAYOUT_OUTPUT_DIR, FINAL_PDF_OUTPUT
+    global INPUT_PDF, TEMP_IMAGE_DIR, OCR_OUTPUT_DIR, TRANSLATION_OUTPUT_DIR, LAYOUT_OUTPUT_DIR, FINAL_PDF_OUTPUT
 
+    # Define paths first
     INPUT_PDF = "/tmp/input.pdf"
     TEMP_IMAGE_DIR = "debug_results/temp_images"
     OCR_OUTPUT_DIR = "debug_results/ocr_results"
     TRANSLATION_OUTPUT_DIR = "debug_results/translated_results"
     LAYOUT_OUTPUT_DIR = "debug_results/layout_output"
     FINAL_PDF_OUTPUT = "data/output_docs/final_output.pdf"
-    # Save uploaded file as fixed input.pdf (regardless of uploaded name)
-    file.save(INPUT_PDF)
-    # Make sure directories exist (will overwrite contents each time)
+
+    # Make sure directories exist and are clean
+    clean_directory(TEMP_IMAGE_DIR)
+    clean_directory(OCR_OUTPUT_DIR)
+    clean_directory(TRANSLATION_OUTPUT_DIR)
+    clean_directory(LAYOUT_OUTPUT_DIR)
+    clean_directory(os.path.dirname(FINAL_PDF_OUTPUT))
     os.makedirs(TEMP_IMAGE_DIR, exist_ok=True)
     os.makedirs(OCR_OUTPUT_DIR, exist_ok=True)
     os.makedirs(TRANSLATION_OUTPUT_DIR, exist_ok=True)
     os.makedirs(LAYOUT_OUTPUT_DIR, exist_ok=True)
     os.makedirs(os.path.dirname(FINAL_PDF_OUTPUT), exist_ok=True)
+
+    # Handle uploaded file
+    file = request.files.get("file")
+    src_lang = request.form.get("src_lang", "pl_PL")
+    tgt_lang = request.form.get("tgt_lang", "en_XX")
+    
+    if not file:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    file.save(INPUT_PDF)
     ext = os.path.splitext(file.filename)[1].lower()
+
     if ext == ".pdf":
-        # convert pdf pages to images (saved in TEMP_IMAGE_DIR)
+        # convert pdf pages to images
         image_paths = step1_pdf_to_images()
     else:
         # handle single image file
@@ -59,11 +84,18 @@ def process_document():
         image_path = os.path.join(TEMP_IMAGE_DIR, "input.jpg")
         img.convert("RGB").save(image_path, "JPEG")
         image_paths = [image_path]
-    # Process the pipeline steps
+    if not image_paths:
+        return jsonify({
+            "message": "No pages to process",
+            "download_url": None
+        }), 400
+
+    # Run pipeline
     step2_apply_ocr(image_paths, src_lang)
     step3_translate_with_lang(src_lang, tgt_lang)
     step4_reconstruct_layout()
     step5_images_to_pdf()
+
     return jsonify({"message": "Processing complete", "download_url": "/download-final-pdf"})
 
 

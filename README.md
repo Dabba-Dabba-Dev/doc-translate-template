@@ -1,3 +1,7 @@
+# Run the Streamlit frontend
+```bash
+streamlit run front.py
+```
 # OCR & Translation API
 
 This project provides an Optical Character Recognition (OCR) and Translation service using **Tesseract** through RESTful APIs. It is containerized using **Docker** and can be easily launched via **Docker Compose**.
@@ -41,29 +45,29 @@ Below is the list of supported European, Arabic, and English languages along wit
 
 | Language              | MBART Language Code |
 | --------------------- | ------------------- |
-| English               | `en_XX`              |
-| French                | `fr_XX`              |
-| German                | `de_DE`              |
-| Spanish               | `es_XX`              |
-| Italian               | `it_IT`              |
-| Portuguese (European) | `pt_XX`              |
-| Dutch                 | `nl_XX`              |
-| Polish                | `pl_PL`              |
-| Romanian              | `ro_RO`              |
-| Russian               | `ru_RU`              |
-| Ukrainian             | `uk_UA`              |
-| Bulgarian             | `bg_BG`              |
-| Czech                 | `cs_CZ`              |
-| Danish                | `da_DK`              |
-| Finnish               | `fi_FI`              |
-| Greek                 | `el_GR`              |
-| Hungarian             | `hu_HU`              |
-| Latvian               | `lv_LV`              |
-| Lithuanian            | `lt_LT`              |
-| Norwegian             | `nb_NO`              |
-| Slovak                | `sk_SK`              |
-| Slovenian             | `sl_SI`              |
-| Swedish               | `sv_SE`              |
-| Croatian              | `hr_HR`              |
-| Serbian (Latin)       | `sr_Latn_RS`         |
-| Arabic                | `ar_AR`              |
+| English               | `en_XX`             |
+| French                | `fr_XX`             |
+| German                | `de_DE`             |
+| Spanish               | `es_XX`             |
+| Italian               | `it_IT`             |
+| Portuguese (European) | `por_XX`            |
+| Dutch                 | `nl_XX`             |
+| Polish                | `pl_XX`             |
+| Romanian              | `ro_XX`             |
+| Russian               | `ru_XX`             |
+| Ukrainian             | `uk_XX`             |
+| Bulgarian             | `bg_XX`             |
+| Czech                 | `cs_XX`             |
+| Danish                | `da_XX`             |
+| Finnish               | `fi_XX`             |
+| Greek                 | `el_XX`             |
+| Hungarian             | `hu_XX`             |
+| Latvian               | `lv_XX`             |
+| Lithuanian            | `lt_XX`             |
+| Norwegian             | `no_XX`             |
+| Slovak                | `sk_XX`             |
+| Slovenian             | `sl_XX`             |
+| Swedish               | `sv_XX`             |
+| Croatian              | `hr_XX`             |
+| Serbian (Latin)       | `sr_XX`             |
+| Arabic                | `ar_AR`             |

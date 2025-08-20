@@ -10,6 +10,40 @@ from flask import send_file
 from flask import Flask, request, jsonify
 import traceback
 import shutil
+import re
+
+def looks_non_translatable(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return True  # skip empty
+    
+    # Email, URLs
+    if re.search(r'\S+@\S+|\bhttps?://\S+', stripped):
+        return True
+    
+    # Phone numbers
+    if re.match(r'^\+?\d[\d\s().-]{5,}$', stripped):
+        return True
+    
+    # Dates (with or without commas)
+    if re.match(r'^\d{1,2}(st|nd|rd|th)?\s+[A-Za-z]+,?\s*\d{0,4}$', stripped):
+        return True
+    
+    # Pure numbers
+    if stripped.isdigit():
+        return True
+    
+    words = stripped.split()
+    
+    # Acronyms / org names (all caps or mostly caps)
+    if any(w.isupper() and len(w) > 2 for w in words):
+        return True
+    
+    # Short proper nouns (Kris Jenner, etc.)
+    if len(words) <= 3 and all(w[0].isupper() for w in words if w):
+        return True
+    
+    return False
 
 def clean_directory(path):
     """Delete all contents of a directory but keep the directory itself."""
@@ -126,7 +160,7 @@ def step2_apply_ocr(image_paths, src_lang):
             overlay_path = os.path.join(OCR_OUTPUT_DIR, f"{base_name}_overlay.png")
             json_path = os.path.join(OCR_OUTPUT_DIR, f"{base_name}.json")
 
-            ocr_results = extract_blocks_with_boxes(image, image_path=overlay_path,  src_lang=src_lang)
+            ocr_results = extract_blocks_with_boxes(image, image_path=overlay_path)
 
             with open(json_path, "w", encoding='utf-8') as f:
                 json.dump(ocr_results, f, ensure_ascii=False, indent=2)
@@ -153,9 +187,12 @@ def step3_translate_with_lang(src_lang, tgt_lang):
         for idx, text in enumerate(texts):
             print(f"[Step 3] Translating block {idx + 1}/{len(texts)}...")
             lines = text.split("\n")
-            translated_lines = [
-                translate_line_remote(line, src_lang, tgt_lang) for line in lines
-            ]
+            translated_lines = []
+            for line in lines:
+                if looks_non_translatable(line):
+                    translated_lines.append(line)  # keep original
+                else:
+                    translated_lines.append(translate_line_remote(line, src_lang, tgt_lang))
             translated_block = "\n".join(translated_lines)
             translated_texts.append({"original": text, "translated": translated_block})
 

@@ -27,9 +27,7 @@ RUN pip install --no-cache-dir transformers python-doctr[torch]
 RUN pip uninstall -y numpy \
  && pip install --no-cache-dir "numpy<2" fpdf
 RUN python -c "from doctr.models import ocr_predictor; ocr_predictor(pretrained=True)"
-# Install spaCy and download the MULTI-LANGUAGE model
-RUN pip install --no-cache-dir spacy && \
-    python -m spacy download xx_ent_wiki_sm
+
 
 # Pre-download the punctuation model
 # RUN python -c "from deepmultilingualpunctuation import PunctuationModel; PunctuationModel()"

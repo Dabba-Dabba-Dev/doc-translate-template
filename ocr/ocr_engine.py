@@ -55,9 +55,9 @@ def clean_text(text):
     """Basic text cleaning without sentence segmentation"""
     text = re.sub(r'-\n', '', text)  # Remove hyphenated line breaks
     text = re.sub(r'(\d+)\.\n', r'\1. ', text)  # Fix numbered lists
-    return text.replace('\n', ' ')  # Replace all newlines with spaces
+    return text
 
-def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignment_tolerance=20, src_lang="en_XX"):
+def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignment_tolerance=20):
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         pil_image.save(tmp.name)
         tmp_path = tmp.name

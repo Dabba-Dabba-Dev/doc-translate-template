@@ -7,6 +7,13 @@ from doctr.models import ocr_predictor
 import numpy as np
 import re
 
+def add_layout_newlines(text):
+    # Already contains '\n' where lines were short; just clean extra spaces
+    text = re.sub(r' +', ' ', text)
+    text = re.sub(r' *\n *', '\n', text)
+    return text.strip()
+
+
 ocr_model = ocr_predictor(pretrained=True)
 
 def calculate_font_height(lines):
@@ -66,6 +73,7 @@ def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignm
     w, h = pil_image.size
     all_lines = []
 
+    # Extract lines with bounding boxes
     for page in result.pages:
         for block in page.blocks:
             for line in block.lines:
@@ -76,9 +84,8 @@ def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignm
 
                 line_text = " ".join([word.value for word in line.words])
                 thickness = np.mean([word.confidence for word in line.words]) if line.words else 0.5
-                width = x_max - x_min
                 height = y_max - y_min
-                boldness_score = thickness * height  # proxy for bold text
+                boldness_score = thickness * height
                 alignment_group = get_alignment_group(x_min, alignment_tolerance)
 
                 all_lines.append({
@@ -90,7 +97,6 @@ def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignm
                 })
 
     all_lines.sort(key=lambda x: x["center_y"])
-
     if not all_lines:
         return []
 
@@ -100,6 +106,7 @@ def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignm
     print(f"[INFO] Estimated font height: {font_height:.1f}px")
     print(f"[INFO] Typical line spacing: {typical_spacing:.1f}px")
 
+    # Group lines into blocks by vertical spacing
     blocks = []
     current_block = [all_lines[0]]
 
@@ -117,8 +124,8 @@ def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignm
     if current_block:
         blocks.append(current_block)
 
+    # Merge blocks based on vertical gap & alignment
     merged_blocks = [blocks[0]] if blocks else []
-
     for i in range(1, len(blocks)):
         current_block = blocks[i]
         last_merged_block = merged_blocks[-1]
@@ -128,16 +135,35 @@ def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignm
         else:
             merged_blocks.append(current_block)
 
+    # Helper: check if line fills block width
+    def line_fills_block(line, block_width, threshold=0.9):
+        line_width = line["box"][2] - line["box"][0]
+        return (line_width / block_width) >= threshold
+
     output = []
     colors = ["red", "blue", "green", "orange", "purple", "brown", "pink", "gray"]
 
+    # Assemble final text with width-aware merging
     for idx, block in enumerate(merged_blocks):
-        # Join lines with spaces (no sentence segmentation)
-        block_text = " ".join([line["text"] for line in block])
+        block_x_min = min(line["box"][0] for line in block)
+        block_x_max = max(line["box"][2] for line in block)
+        block_width = block_x_max - block_x_min
 
-        x_min = min(line["box"][0] for line in block)
+        block_lines_text = []
+        for line in block:
+            if line_fills_block(line, block_width):
+                block_lines_text.append(line["text"])  # merge with next line
+            else:
+                block_lines_text.append(line["text"] + "\n")  # keep newline for layout
+
+        raw_text = " ".join(block_lines_text)
+        block_text = add_layout_newlines(raw_text)
+
+
+        # Draw overlay
+        x_min = block_x_min
         y_min = min(line["box"][1] for line in block)
-        x_max = max(line["box"][2] for line in block)
+        x_max = block_x_max
         y_max = max(line["box"][3] for line in block)
 
         color = colors[idx % len(colors)]

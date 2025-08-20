@@ -46,7 +46,7 @@ if uploaded_file is not None:
     if st.button("Upload & Translate"):
         # Prepare form data for your /upload API
         files = {"file": (uploaded_file.name, uploaded_file, uploaded_file.type)}
-        data = {"source_lang": languages[source_lang], "target_lang": languages[target_lang]}
+        data = {"src_lang": languages[source_lang], "tgt_lang": languages[target_lang]}
 
         try:
             response = requests.post(UPLOAD_API, files=files, data=data)

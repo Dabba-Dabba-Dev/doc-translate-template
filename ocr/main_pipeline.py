@@ -171,6 +171,8 @@ def step2_apply_ocr(image_paths, src_lang):
             print(f"[ERROR] OCR failed for {image_path}: {e}")
 
 def step3_translate_with_lang(src_lang, tgt_lang):
+    print(f"[Step 3] Starting translation: src={src_lang}, tgt={tgt_lang}")
+
     os.makedirs(TRANSLATION_OUTPUT_DIR, exist_ok=True)
     json_files = [f for f in os.listdir(OCR_OUTPUT_DIR) if f.endswith(".json")]
 

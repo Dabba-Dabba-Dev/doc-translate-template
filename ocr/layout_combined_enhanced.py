@@ -65,7 +65,7 @@ class EnhancedDocumentReconstructor:
         
         
         self.layout_rows = {} 
-        self.min_vertical_gap = 15  
+        self.min_vertical_gap = 5  
         self.overlap_tolerance = 5  
         
        
@@ -333,66 +333,36 @@ class EnhancedDocumentReconstructor:
         
         self.logger.warning(f"Could not load {preferred_font}, using default font")
         return ImageFont.load_default()
-    
-    def _detect_dominant_font_family(self, ocr_data: List[Dict]) -> str:
-        """Enhanced AI-powered dominant font detection"""
-        font_characteristics = {}
-        document_type_indicators = []
-        
-        # Analyze text content for document type
-        all_text = ""
-        for block in ocr_data:
-            block_text = block.get('block_text', '')
-            all_text += block_text + " "
+    def _is_text_bold(self, block_data: Dict) -> bool:
+        """
+        Detect if text is bold using the boldness_score from OCR data.
+        """
+        # Check if we have boldness_score in the lines
+        if 'lines' in block_data:
+            bold_scores = []
+            for line in block_data['lines']:
+                if 'boldness_score' in line:
+                    bold_scores.append(line['boldness_score'])
             
-            # Collect document type indicators
-            if any(word in block_text.upper() for word in ['REPUBLIC', 'EMBASSY', 'INVITATION', 'CERTIFICATE']):
-                document_type_indicators.append('formal_official')
-            elif any(word in block_text.upper() for word in ['AUTHORIZATION', 'PERMISSION', 'EMPLOYMENT']):
-                document_type_indicators.append('legal_business')
+            # If we have boldness scores, calculate average and check against threshold
+            if bold_scores:
+                avg_boldness = sum(bold_scores) / len(bold_scores)
+                # Your scores are around 100, so use a higher threshold
+                return avg_boldness > 60  # Adjust this threshold as needed
         
-        # Analyze font characteristics
-        for block in ocr_data:
-            if 'lines' not in block:
-                continue
-                
-            for line in block['lines']:
-                estimated_height = line.get('estimated_font_height', 40)
-                boldness = line.get('boldness_score', 0)
-                
-                # Create font signature based on characteristics
-                font_signature = f"h{int(estimated_height/5)*5}_b{int(boldness*10)}"
-                font_characteristics[font_signature] = font_characteristics.get(font_signature, 0) + 1
+        # Fallback: check if text looks like a header
+        text = block_data.get('block_text', '').strip()
+        if text:
+            text_upper = text.upper()
+            # Check for header patterns
+            header_indicators = ['HINWEIS', 'NOTE', 'ORT, DATUM', 'PLACE, DATE', 'UNTERSCHRIFT', 'SIGNATURE']
+            if any(indicator in text_upper for indicator in header_indicators):
+                return True
         
-        # Enhanced font selection logic based on document analysis
-        if font_characteristics:
-            dominant_signature = max(font_characteristics, key=font_characteristics.get)
-            self.logger.info(f"Detected dominant font characteristics: {dominant_signature}")
-            self.logger.info(f"Document type indicators: {set(document_type_indicators)}")
-            
-            # Choose font based on document type and characteristics
-            if 'formal_official' in document_type_indicators:
-                if "h35" in dominant_signature or "h40" in dominant_signature:
-                    return "times"  # Times for formal official documents
-                else:
-                    return "georgia"  # Georgia for readable formal text
-            elif 'legal_business' in document_type_indicators:
-                return "calibri"  # Modern professional look
-            else:
-                # Default analysis
-                if "h35" in dominant_signature or "h40" in dominant_signature:
-                    return "times"
-                elif "h30" in dominant_signature:
-                    return "calibri"
-                elif "h25" in dominant_signature:
-                    return "verdana"
-                else:
-                    return "times"  # Default to Times for better readability
-        
-        return "times"  # Default to Times New Roman for professional appearance
-    
+        return False
     def _get_font(self, size: int, weight: str = "regular") -> ImageFont.ImageFont:
         """Enhanced font retrieval with intelligent selection and weight support"""
+        size = int(round(size))
         cache_key = f"{size}_{weight}_{self.dominant_font_family}"
         if cache_key not in self.font_cache:
             try:
@@ -567,94 +537,119 @@ class EnhancedDocumentReconstructor:
         # Default to left if uncertain
         return "left"
     
+    def _detect_dominant_font_family(self, ocr_data: List[Dict]) -> str:
+        """Enhanced AI-powered dominant font detection using block-level font height"""
+        font_characteristics = {}
+        document_type_indicators = []
+        
+        # Analyze text content for document type
+        all_text = ""
+        for block in ocr_data:
+            block_text = block.get('block_text', '')
+            all_text += block_text + " "
+            
+            # Collect document type indicators
+            if any(word in block_text.upper() for word in ['REPUBLIC', 'EMBASSY', 'INVITATION', 'CERTIFICATE']):
+                document_type_indicators.append('formal_official')
+            elif any(word in block_text.upper() for word in ['AUTHORIZATION', 'PERMISSION', 'EMPLOYMENT']):
+                document_type_indicators.append('legal_business')
+        
+        # Analyze font characteristics using block-level font height
+        for block in ocr_data:
+            estimated_height = block.get('estimated_font_height', 40)
+            boldness = 0
+            
+            # Try to get boldness from lines if available
+            if 'lines' in block and block['lines']:
+                line_boldness = [line.get('boldness_score', 0) for line in block['lines']]
+                boldness = sum(line_boldness) / len(line_boldness) if line_boldness else 0
+            
+            # Create font signature based on characteristics
+            font_signature = f"h{int(estimated_height/5)*5}_b{int(boldness*10)}"
+            font_characteristics[font_signature] = font_characteristics.get(font_signature, 0) + 1
+        
+        # Enhanced font selection logic based on document analysis
+        if font_characteristics:
+            dominant_signature = max(font_characteristics, key=font_characteristics.get)
+            self.logger.info(f"Detected dominant font characteristics: {dominant_signature}")
+            self.logger.info(f"Document type indicators: {set(document_type_indicators)}")
+            
+            # Choose font based on document type and characteristics
+            if 'formal_official' in document_type_indicators:
+                if "h35" in dominant_signature or "h40" in dominant_signature:
+                    return "times"  # Times for formal official documents
+                else:
+                    return "georgia"  # Georgia for readable formal text
+            elif 'legal_business' in document_type_indicators:
+                return "calibri"  # Modern professional look
+            else:
+                # Default analysis
+                if "h35" in dominant_signature or "h40" in dominant_signature:
+                    return "times"
+                elif "h30" in dominant_signature:
+                    return "calibri"
+                elif "h25" in dominant_signature:
+                    return "verdana"
+                else:
+                    return "times"  # Default to Times for better readability
+        
+        return "times"  # Default to Times New Roman for professional appearance
+
     def _detect_text_style_enhanced(self, text: str, block_data: Dict) -> TextStyle:
-        """IMPROVED text style detection with smart paragraph detection"""
+        """Use consistent font sizing based on block content"""
         text_lower = text.lower()
         text_upper = text.upper()
         
-        # Analyze block position and content positioning
-        box = block_data['block_box']
-        left_x = box[0][0]
-        right_x = box[1][0]
-        width = right_x - left_x
+        # Get the estimated font height from OCR data - THIS IS THE KEY CHANGE
+        block_font_size = block_data.get('estimated_font_height', 40)
         
-        # Get line-level alignment information from OCR data
+        # Determine alignment
         detected_alignment = self._detect_content_alignment_within_block(block_data, text)
         
-        # SMART PARAGRAPH DETECTION - Check if this is normal paragraph text
-        is_paragraph = self._is_normal_paragraph_text(text, block_data)
+        # Check if this should be bold
+        is_bold = self._is_text_bold(block_data)
         
-       
-        style_priority = [
-            'document_title', 'main_header', 'sub_header', 
-            'official_text', 'body_text', 'company_info', 
-            'signature_area', 'date_info'
-        ]
-        
-        matched_style = None
-        for style_name in style_priority:
-            if style_name in self.style_patterns:
-                pattern = self.style_patterns[style_name]
-                keywords = pattern['keywords']
-                
-                for keyword in keywords:
-                    if keyword.upper() in text_upper or keyword.lower() in text_lower:
-                        matched_style = pattern['style']
-                        break
-                
-                if matched_style:
-                    break
-        
-        # Apply smart paragraph detection logic
-        if matched_style:
-            # SMART OVERRIDE: If detected as paragraph, force normal weight
-            final_weight = matched_style.font_weight
-            if is_paragraph and matched_style.font_weight == "bold":
-                final_weight = "normal"
-                self.logger.debug(f"Override: Changed '{text[:50]}...' from bold to normal (paragraph detected)")
-            
-            
-            final_alignment = matched_style.alignment
-            if matched_style.alignment != "left":  # Only override if style has specific alignment
-                final_alignment = matched_style.alignment
-            
+        # Apply consistent styling rules with OCR-based sizing
+        if "hinweis" in text_lower or "note" in text_upper:
+            # Header style for notes - use OCR size with slight increase
             return TextStyle(
-                font_size=matched_style.font_size,
-                font_weight=final_weight,  # Use smart weight
-                text_color=matched_style.text_color,
-                padding=matched_style.padding,
-                alignment=final_alignment,
-                line_spacing=matched_style.line_spacing
+                font_size=int(block_font_size * 1.1),  # 10% larger than OCR estimate
+                font_weight="bold",
+                text_color="black",
+                padding=4,
+                alignment=detected_alignment,
+                line_spacing=1.1
             )
-
-        
-        fallback_size = 30
-        if len(text) < 50:  
-            fallback_size = 32
-        elif len(text) > 200: 
-            fallback_size = 28
-        
-        # SMART WEIGHT DETECTION for fallback
-        fallback_weight = "normal"  # Default to normal
-        
-        # Only make it bold if it's clearly a header/title
-        if not is_paragraph:
-            # Check if it looks like a title/header
-            if (len(text) < 100 and  # Short text
-                (text.isupper() or  # All uppercase
-                 text.count(' ') < 5 or  # Few words
-                 any(word in text.upper() for word in ['TITLE', 'HEADER', 'SECTION', 'CHAPTER']))):
-                fallback_weight = "bold"
-        
-        return TextStyle(
-            font_size=fallback_size,
-            font_weight=fallback_weight,  # Smart weight detection
-            text_color="black",
-            padding=4,
-            alignment=detected_alignment,
-            line_spacing=1.2
-        )
-    
+        elif any(x in text_upper for x in ["ORT, DATUM", "PLACE, DATE", "UNTERSCHRIFT", "SIGNATURE"]):
+            # Style for signature/date areas - use OCR size
+            return TextStyle(
+                font_size=int(block_font_size),
+                font_weight="bold" if is_bold else "normal",
+                text_color="black",
+                padding=3,
+                alignment=detected_alignment,
+                line_spacing=1.1
+            )
+        elif "fachkraft" in text_lower or "beschleunigt" in text_lower:
+            # Style for important terms - use OCR size
+            return TextStyle(
+                font_size=int(block_font_size),
+                font_weight="bold",
+                text_color="black",
+                padding=4,
+                alignment=detected_alignment,
+                line_spacing=1.15
+            )
+        else:
+            # Default body text style - use OCR size directly
+            return TextStyle(
+                font_size=int(block_font_size),
+                font_weight="bold" if is_bold else "normal",
+                text_color="black",
+                padding=4,
+                alignment=detected_alignment,
+                line_spacing=1.2
+            )
     def _calculate_layout_rows(self, ocr_data: List[Dict]):
         """Calculate layout rows for better spacing management"""
         self.layout_rows = {}
@@ -687,21 +682,23 @@ class EnhancedDocumentReconstructor:
         self.logger.info(f"Organized content into {len(self.layout_rows)} layout rows")
     
     def _get_smart_position(self, block_data: Dict, text_width: int, text_height: int, style: TextStyle) -> Tuple[int, int]:
-        """IMPROVED positioning that follows the better alignment logic from second code"""
+        """Improved positioning that maintains original vertical placement while handling overlaps"""
         box = block_data['block_box']
         
-        # Use original coordinates as the primary reference (like in second code)
+        # Use original coordinates as the primary reference
         original_x1 = int(box[0][0] * self.canvas_width)
         original_y1 = int(box[0][1] * self.canvas_height)
         original_x2 = int(box[1][0] * self.canvas_width)
+        original_y2 = int(box[1][1] * self.canvas_height)
+        
+        # Calculate original block height for reference
+        original_height = original_y2 - original_y1
         
         # IMPROVED X position calculation 
         if style.alignment == "center":
-           
             canvas_center = self.canvas_width // 2
             x_position = canvas_center - text_width // 2
         elif style.alignment == "right":
-            
             x_position = min(original_x2 - text_width - 10, self.canvas_width - text_width - 20)
         else:  
             x_position = max(original_x1, 20)  
@@ -709,40 +706,24 @@ class EnhancedDocumentReconstructor:
         # Ensure X is within bounds
         x_position = max(20, min(x_position, self.canvas_width - text_width - 20))
         
-        # Smart Y positioning to avoid overlaps (keep the sophisticated system from first code)
+        # START with original Y position - this is the key fix
         y_position = original_y1
-        max_attempts = 20
         
-        for attempt in range(max_attempts):
-            overlaps = False
-            test_y = y_position + (attempt * self.min_vertical_gap)
-            
-            for placed_block in self.placed_blocks:
-                if not (x_position + text_width + self.overlap_tolerance < placed_block.x1 or 
-                       x_position - self.overlap_tolerance > placed_block.x2 or 
-                       test_y + text_height + self.overlap_tolerance < placed_block.y1 or 
-                       test_y - self.overlap_tolerance > placed_block.y2):
-                    overlaps = True
-                    break
-            
-            if not overlaps:
-                y_position = test_y
+        # Only adjust Y if there's an actual overlap, don't preemptively add gaps
+        for placed_block in self.placed_blocks:
+            if (x_position < placed_block.x2 and x_position + text_width > placed_block.x1 and
+                y_position < placed_block.y2 and y_position + text_height > placed_block.y1):
+                # There's an overlap, move this block below the overlapping one
+                y_position = placed_block.y2 + 5  # Small gap of 5px instead of min_vertical_gap
                 break
-            
-            if overlaps and attempt > 10:
-                for placed_block in self.placed_blocks:
-                    if (x_position < placed_block.x2 and x_position + text_width > placed_block.x1):
-                        y_position = max(y_position, placed_block.y2 + self.min_vertical_gap)
         
-        
+        # Ensure Y is within bounds
         y_position = max(20, min(y_position, self.canvas_height - text_height - 20))
         
         return x_position, y_position
-    
-    def _wrap_text_smart(self, text: str, font: ImageFont.ImageFont, max_width: int) -> List[str]:
+    def _wrap_text_smart(self, text: str, font: ImageFont.ImageFont, font_size: int, max_width: int) -> List[str]:
         """Smart text wrapping with better line break handling"""
         lines = []
-        
         
         paragraphs = text.split('\n')
         
@@ -751,7 +732,6 @@ class EnhancedDocumentReconstructor:
             if not paragraph:
                 lines.append("")
                 continue
-            
             
             words = paragraph.split()
             current_line = ""
@@ -763,7 +743,8 @@ class EnhancedDocumentReconstructor:
                     bbox = font.getbbox(test_line)
                     line_width = bbox[2] - bbox[0]
                 except:
-                    line_width = len(test_line) * (font.size * 0.6)
+                    # Fallback calculation using font size
+                    line_width = len(test_line) * (font_size * 0.6)
                 
                 if line_width <= max_width or not current_line:
                     current_line = test_line
@@ -776,7 +757,6 @@ class EnhancedDocumentReconstructor:
                 lines.append(current_line)
         
         return [line for line in lines if line is not None]
-    
     def _draw_enhanced_text_block(self, draw: ImageDraw.Draw, text: str, block_data: Dict, style: TextStyle):
         """Enhanced text drawing with improved positioning and typography"""
         if not text.strip():
@@ -788,7 +768,7 @@ class EnhancedDocumentReconstructor:
         box = block_data['block_box']
         original_width = int((box[1][0] - box[0][0]) * self.canvas_width)
         max_width = max(original_width, 200)  
-        lines = self._wrap_text_smart(text, font, max_width)
+        lines = self._wrap_text_smart(text, font,style.font_size, max_width)
         if not lines:
             return
         

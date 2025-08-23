@@ -18,7 +18,13 @@ ocr_model = ocr_predictor(pretrained=True)
 
 def calculate_font_height(lines):
     heights = [line["box"][3] - line["box"][1] for line in lines]
-    return np.median(heights) if heights else 20
+    median_height = np.median(heights) if heights else 20
+    
+    # Cap the font height at 30 if it's bigger than 40
+    if median_height > 40:
+        return 30
+    
+    return median_height
 
 def calculate_line_spacing(lines):
     spacings = []
@@ -100,7 +106,7 @@ def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignm
     if not all_lines:
         return []
 
-    font_height = calculate_font_height(all_lines)
+    font_height = 40
     typical_spacing = calculate_line_spacing(all_lines)
 
     print(f"[INFO] Estimated font height: {font_height:.1f}px")

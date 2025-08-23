@@ -4,7 +4,6 @@ import requests
 UPLOAD_API = "http://localhost:5000/process"
 DOWNLOAD_API = "http://localhost:5000/download-final-pdf"
 
-
 languages = {
     "English": "en_XX",
     "French": "fr_XX",
@@ -32,6 +31,7 @@ languages = {
     "Serbian": "sr_XX",     
     "Arabic": "ar_AR"
 }
+
 st.title("Visa Document Translator – Upload & Download Translations")
 
 source_lang = st.selectbox("Select Original Language:", list(languages.keys()))
@@ -51,10 +51,47 @@ if uploaded_file is not None:
                 result = response.json()
                 if result.get("status") == "success":
                     st.success("✅ Translation Complete!")
+                    
                     translated_file = result.get("text_file")
                     if translated_file:
-                        download_url = DOWNLOAD_API + translated_file
-                        st.markdown(f"[⬇️ Download Translated File]({download_url})", unsafe_allow_html=True)
+                        # Create a prominent download section
+                        st.markdown("---")
+                        st.subheader("Download Your Translated Document")
+                        
+                        # Construct proper download URL
+                        if translated_file.startswith('/'):
+                            download_url = DOWNLOAD_API + translated_file
+                        else:
+                            download_url = f"{DOWNLOAD_API}/{translated_file}"
+                        
+                        # Create columns for better layout
+                        col1, col2, col3 = st.columns([1, 2, 1])
+                        
+                        with col2:
+                            # Try to fetch the file and provide direct download
+                            try:
+                                file_response = requests.get(download_url)
+                                if file_response.status_code == 200:
+                                    # Determine file extension from the translated_file name
+                                    file_extension = translated_file.split('.')[-1] if '.' in translated_file else 'pdf'
+                                    mime_type = 'application/pdf' if file_extension == 'pdf' else 'text/plain'
+                                    
+                                    st.download_button(
+                                        label="Download Translated File",
+                                        data=file_response.content,
+                                        file_name=f"translated_{uploaded_file.name}",
+                                        mime=mime_type,
+                                        type="primary"
+                                    )
+                                else:
+                                    # Fallback to link if direct download fails
+                                    st.markdown(f"[Download Translated File]({download_url})")
+                            except Exception as download_error:
+                                # Fallback to link if there's any error
+                                st.markdown(f"[Download Translated File]({download_url})")
+                                st.caption("Click the link above to download your translated document")
+                        
+                        st.markdown("---")
                 else:
                     st.error(result.get("message", "Unknown error"))
             else:

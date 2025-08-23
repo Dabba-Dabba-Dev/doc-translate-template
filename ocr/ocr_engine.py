@@ -148,7 +148,7 @@ def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignm
         block_x_min = min(line["box"][0] for line in block)
         block_x_max = max(line["box"][2] for line in block)
         block_width = block_x_max - block_x_min
-
+        
         block_lines_text = []
         for line in block:
             if line_fills_block(line, block_width):

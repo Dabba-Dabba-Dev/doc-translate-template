@@ -126,6 +126,7 @@ def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignm
 
     # Merge blocks based on vertical gap & alignment
     merged_blocks = [blocks[0]] if blocks else []
+    
     for i in range(1, len(blocks)):
         current_block = blocks[i]
         last_merged_block = merged_blocks[-1]

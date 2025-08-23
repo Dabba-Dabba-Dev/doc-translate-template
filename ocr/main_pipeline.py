@@ -16,33 +16,37 @@ def looks_non_translatable(text: str) -> bool:
     stripped = text.strip()
     if not stripped:
         return True  # skip empty
-    
-    # Email, URLs
+
+    # Emails, URLs
     if re.search(r'\S+@\S+|\bhttps?://\S+', stripped):
         return True
-    
+
     # Phone numbers
     if re.match(r'^\+?\d[\d\s().-]{5,}$', stripped):
         return True
-    
-    # Dates (with or without commas)
-    if re.match(r'^\d{1,2}(st|nd|rd|th)?\s+[A-Za-z]+,?\s*\d{0,4}$', stripped):
+
+    # Dates (many formats)
+    if re.match(r'^(\d{1,2}(st|nd|rd|th)?\s+[A-Za-z]+,?\s*\d{0,4}|[A-Za-z]+\s+\d{1,2},?\s*\d{0,4}|\d{4}-\d{2}-\d{2})$', stripped):
         return True
-    
-    # Pure numbers
-    if stripped.isdigit():
+
+    # Pure numbers / decimals / comma numbers
+    if re.match(r'^[\d,.]+$', stripped):
         return True
-    
+
     words = stripped.split()
-    
+
     # Acronyms / org names (all caps or mostly caps)
-    if any(w.isupper() and len(w) > 2 for w in words):
+    if all(c.isupper() or not c.isalpha() for c in stripped) and len(stripped) > 1:
         return True
-    
-    # Short proper nouns (Kris Jenner, etc.)
+
+    # Short proper nouns / titles
     if len(words) <= 3 and all(w[0].isupper() for w in words if w):
         return True
-    
+
+    # Single punctuation / symbols only
+    if re.match(r'^[^\w\s]+$', stripped):
+        return True
+
     return False
 
 def clean_directory(path):

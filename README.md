@@ -43,31 +43,31 @@ All OCR and translation functionalities are exposed via POST requests. To use th
 ## 🌐 Supported Languages
 Below is the list of supported European, Arabic, and English languages along with their corresponding mbart language codes:
 
-| Language              | MBART Language Code |
-| --------------------- | ------------------- |
-| English               | `en_XX`             |
-| French                | `fr_XX`             |
-| German                | `de_DE`             |
-| Spanish               | `es_XX`             |
-| Italian               | `it_IT`             |
-| Portuguese (European) | `por_XX`            |
-| Dutch                 | `nl_XX`             |
-| Polish                | `pl_XX`             |
-| Romanian              | `ro_XX`             |
-| Russian               | `ru_XX`             |
-| Ukrainian             | `uk_XX`             |
-| Bulgarian             | `bg_XX`             |
-| Czech                 | `cs_XX`             |
-| Danish                | `da_XX`             |
-| Finnish               | `fi_XX`             |
-| Greek                 | `el_XX`             |
-| Hungarian             | `hu_XX`             |
-| Latvian               | `lv_XX`             |
-| Lithuanian            | `lt_XX`             |
-| Norwegian             | `no_XX`             |
-| Slovak                | `sk_XX`             |
-| Slovenian             | `sl_XX`             |
-| Swedish               | `sv_XX`             |
-| Croatian              | `hr_XX`             |
-| Serbian (Latin)       | `sr_XX`             |
-| Arabic                | `ar_AR`             |
+
+| Language   | MBART Code        |
+| ---------- | ----------------- |
+| English    | `en_XX`           |
+| French     | `fr_XX`           |
+| German     | `de_DE`           |
+| Spanish    | `es_XX`           |
+| Italian    | `it_IT`           |
+| Portuguese | `pt_XX`           |
+| Dutch      | `nl_XX`           |
+| Polish     | `pl_PL`           |
+| Romanian   | `ro_RO`           |
+| Russian    | `ru_RU`           |
+| Ukrainian  | `uk_UK`           |
+| Bulgarian  | `bg_BG`           |
+| Czech      | `cs_CZ`           |
+| Danish     | `da_DK`           |
+| Finnish    | `fi_FI`           |
+| Greek      | `el_EL`           |
+| Hungarian  | `hu_HU`           |
+| Latvian    | `lv_LV`           |
+| Lithuanian | `lt_LT`           |
+| Slovak     | `sk_SK`           |
+| Slovenian  | `sl_SI`           |
+| Swedish    | `sv_SE`           |
+| Croatian   | `hr_HR`           |
+| Serbian    | `sr_XX`           |
+| Arabic     | `ar_AR`           |

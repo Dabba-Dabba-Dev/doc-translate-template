@@ -508,26 +508,78 @@ class EnhancedDocumentReconstructor:
                 )
             }
         }
+    def _detect_content_alignment_within_block(self, block_data: Dict, text: str) -> str:
+        """Detect alignment based on content positioning within the block"""
+        box = block_data['block_box']
+        left_x = box[0][0]
+        right_x = box[1][0]
+        width = right_x - left_x
+        
+        # Check if we have line-level data from OCR
+        if 'lines' in block_data and block_data['lines']:
+            return self._detect_alignment_from_lines(block_data['lines'], width)
+        
+        # Fallback: analyze text characteristics
+        return "left"
+
+    def _detect_alignment_from_lines(self, lines: List[Dict], block_width: float) -> str:
+        """Detect alignment based on line positioning within the block"""
+        left_margins = []
+        right_margins = []
+        center_deviations = []
+        
+        for line in lines:
+            if 'normalized_box' in line:
+                line_left = line['normalized_box'][0][0]
+                line_right = line['normalized_box'][1][0]
+                line_center = (line_left + line_right) / 2
+                block_center = 0.5  # Normalized block center
+                
+                left_margins.append(line_left)
+                right_margins.append(1 - line_right)  # Distance from right edge
+                center_deviations.append(abs(line_center - block_center))
+        
+        if not left_margins:
+            return "left"  # Default
+        
+        # Calculate average positioning
+        avg_left_margin = sum(left_margins) / len(left_margins)
+        avg_right_margin = sum(right_margins) / len(right_margins)
+        avg_center_deviation = sum(center_deviations) / len(center_deviations)
+        
+        # Alignment detection thresholds
+        left_aligned_threshold = 0.05  # Small left margin
+        right_aligned_threshold = 0.05  # Small right margin
+        center_aligned_threshold = 0.05  # Small center deviation
+        
+        # Check for right alignment (small right margin, large left margin)
+        if avg_right_margin < right_aligned_threshold and avg_left_margin > 0.2:
+            return "right"
+        
+        # Check for center alignment (small center deviation)
+        if avg_center_deviation < center_aligned_threshold:
+            return "center"
+        
+        # Check for left alignment (small left margin)
+        if avg_left_margin < left_aligned_threshold:
+            return "left"
+        
+        # Default to left if uncertain
+        return "left"
     
     def _detect_text_style_enhanced(self, text: str, block_data: Dict) -> TextStyle:
         """IMPROVED text style detection with smart paragraph detection"""
         text_lower = text.lower()
         text_upper = text.upper()
         
-        # Analyze block position for alignment hints
+        # Analyze block position and content positioning
         box = block_data['block_box']
-        center_x = (box[0][0] + box[1][0]) / 2
         left_x = box[0][0]
-        width = box[1][0] - box[0][0]
+        right_x = box[1][0]
+        width = right_x - left_x
         
-        # IMPROVED alignment detection logic
-        detected_alignment = "left"  # Default to left
-        
-        # Only use center if very close to center (stricter than before)
-        if 0.45 < center_x < 0.55:
-            detected_alignment = "center"
-        elif left_x > 0.7:  # Right-aligned blocks
-            detected_alignment = "right"
+        # Get line-level alignment information from OCR data
+        detected_alignment = self._detect_content_alignment_within_block(block_data, text)
         
         # SMART PARAGRAPH DETECTION - Check if this is normal paragraph text
         is_paragraph = self._is_normal_paragraph_text(text, block_data)
@@ -563,8 +615,8 @@ class EnhancedDocumentReconstructor:
             
             
             final_alignment = matched_style.alignment
-            if matched_style.alignment == "center" and detected_alignment != "center":
-                final_alignment = detected_alignment
+            if matched_style.alignment != "left":  # Only override if style has specific alignment
+                final_alignment = matched_style.alignment
             
             return TextStyle(
                 font_size=matched_style.font_size,

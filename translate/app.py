@@ -1,10 +1,7 @@
 import os
 os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 from load_translation_model import model, tokenizer
-import torch
-from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 from flask import Flask, request, jsonify
-import traceback
 
 app = Flask(__name__)
 
@@ -16,10 +13,10 @@ def translate_line(text, src_lang, tgt_lang="en_XX"):
     translated_tokens = model.generate(
         **inputs,
         forced_bos_token_id=tokenizer.lang_code_to_id[tgt_lang],
-        max_length=1024,              # or your limit
+        max_length=1024,              
         num_beams=5,                  # beam search helps with coherence
         no_repeat_ngram_size=3,       # blocks repeating 3-grams
-        repetition_penalty=1.3,       # >1 discourages repetition
+        repetition_penalty=1.3,       # >1 to discourages repetition
         length_penalty=1.0,           # tweak for verbosity
         early_stopping=True
     )

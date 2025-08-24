@@ -1,4 +1,4 @@
-FROM python:3.9
+FROM python:3.9-slim
 
 WORKDIR /app
 
@@ -9,11 +9,9 @@ RUN pip install flask
 
 # Pre-download MBart model & tokenizer
 RUN python -c "\
-import os; \
 from transformers import MBartForConditionalGeneration, MBart50TokenizerFast; \
 MBartForConditionalGeneration.from_pretrained('facebook/mbart-large-50-many-to-many-mmt'); \
 MBart50TokenizerFast.from_pretrained('facebook/mbart-large-50-many-to-many-mmt')"
-
 
 COPY translate/load_translation_model.py .
 COPY translate/app.py .

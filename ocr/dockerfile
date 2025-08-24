@@ -2,7 +2,7 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-# 1. System dependencies (stable layer)
+# System dependencies
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
         tesseract-ocr \
@@ -15,20 +15,15 @@ RUN apt-get update && \
         libgl1 && \
     rm -rf /var/lib/apt/lists/*
 
-# 2. Core Python packages (independent installations)
+# Core Python packages
 RUN pip install --no-cache-dir torch==2.2.0 --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir torchvision==0.17.0 --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir pdf2image==1.16.3
 
-# 3. Requirements (separate layer for better caching)
+# Requirements
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install --no-cache-dir transformers python-doctr[torch]
-RUN pip uninstall -y numpy \
- && pip install --no-cache-dir "numpy<2" fpdf
 RUN python -c "from doctr.models import ocr_predictor; ocr_predictor(pretrained=True)"
-
-
 
 COPY ocr/ocr_engine.py .
 COPY ocr/main_pipeline.py .

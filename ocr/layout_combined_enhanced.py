@@ -4,7 +4,8 @@ import os
 from typing import List, Dict, Tuple, Optional
 import logging
 from dataclasses import dataclass
-import re
+import difflib
+from collections import Counter
 
 @dataclass
 class TextStyle:
@@ -198,7 +199,6 @@ class EnhancedDocumentReconstructor:
                         line_alignments.append("left")
             
             if line_alignments:
-                from collections import Counter
                 alignment_counts = Counter(line_alignments)
                 most_common_alignment, count = alignment_counts.most_common(1)[0]
                 
@@ -748,7 +748,7 @@ class EnhancedDocumentReconstructor:
     
     def _find_best_translation_match(self, text: str, translation_data: List[Dict]) -> Optional[str]:
         """Find best translation match using fuzzy logic"""
-        import difflib
+        
         
         best_ratio = 0
         best_translation = None

@@ -5,7 +5,7 @@ This project provides an Optical Character Recognition (OCR) and Translation ser
 
 ---
 
-## 🚀 Getting Started
+##  Getting Started
 
 To run the services, make sure you have **Docker** and **Docker Compose** installed on your machine.
 
@@ -34,11 +34,11 @@ streamlit run front.py
 
 ---
 
-## 📝 API Usage
+##  API Usage
 
 All functionalities are exposed via **REST endpoints**.
 
-### 1️⃣ Process & Translate Document
+### 1️ Process & Translate Document
 
 **Endpoint:**
 `POST http://localhost:5000/process`
@@ -71,7 +71,7 @@ Returns a JSON containing extracted OCR text and its translation (see `front.py`
 
 ---
 
-### 2️⃣ Download Final PDF
+### 2️ Download Final PDF
 
 **Endpoint:**
 `GET http://localhost:5000/download-final-pdf`
@@ -86,7 +86,7 @@ curl -O http://localhost:5000/download-final-pdf
 
 ---
 
-## 🌐 Supported Languages
+##  Supported Languages
 
 Below is the list of supported languages with their MBART codes:
 
@@ -118,6 +118,5 @@ Below is the list of supported languages with their MBART codes:
 | Serbian    | `sr_XX`    |
 | Arabic     | `ar_AR`    |
 
-```
 
 

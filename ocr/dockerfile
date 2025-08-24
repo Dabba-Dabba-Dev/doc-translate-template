@@ -29,9 +29,7 @@ RUN pip uninstall -y numpy \
 RUN python -c "from doctr.models import ocr_predictor; ocr_predictor(pretrained=True)"
 
 
-# Pre-download the punctuation model
-# RUN python -c "from deepmultilingualpunctuation import PunctuationModel; PunctuationModel()"
-# 4. Application code (changes most frequently)
+
 COPY ocr/ocr_engine.py .
 COPY ocr/main_pipeline.py .
 COPY ocr/layout_combined_enhanced.py .

@@ -59,14 +59,14 @@ class EnhancedDocumentReconstructor:
         self.font_usage_stats = {}
         
         
-        self.left_margin_threshold = 0.15    
+        self.left_margin_threshold = 0.13    
         self.right_margin_threshold = 0.85   
         self.center_threshold = 0.1          
         
         
         self.layout_rows = {} 
         self.min_vertical_gap = 5  
-        self.overlap_tolerance = 5  
+        self.overlap_tolerance = 10  
         
        
         self.document_text_analysis = {}
@@ -117,7 +117,7 @@ class EnhancedDocumentReconstructor:
             r'^\d+\.\s*[A-Z]',  # Numbered sections
             r'^(CHAPTER|SECTION|PART|ARTICLE)\s*\d*',
             r'^(REPUBLIC|EMBASSY|INVITATION|CERTIFICATE|AUTHORIZATION)',
-            r'OŚWIADCZENIE|STATEMENT|CONFIRMATION',
+            r'OÃ…Å¡WIADCZENIE|STATEMENT|CONFIRMATION',
         ]
         
         
@@ -161,7 +161,7 @@ class EnhancedDocumentReconstructor:
             'short_text_threshold': sorted(text_lengths)[int(len(text_lengths) * 0.3)],  # 30th percentile
         }
         
-        self.logger.info(f"📊 Document analysis: avg_length={self.document_text_analysis['avg_text_length']:.1f}, "
+        self.logger.info(f"Ã°Å¸â€œÅ  Document analysis: avg_length={self.document_text_analysis['avg_text_length']:.1f}, "
                         f"long_threshold={self.document_text_analysis['long_text_threshold']}, "
                         f"short_threshold={self.document_text_analysis['short_text_threshold']}")
     
@@ -269,7 +269,7 @@ class EnhancedDocumentReconstructor:
         
         
         if abs(paragraph_score - header_score) <= 2:
-            self.logger.debug(f"📝 Borderline text analysis: '{text_clean[:50]}...' "
+            self.logger.debug(f"Ã°Å¸â€œÂ Borderline text analysis: '{text_clean[:50]}...' "
                             f"P-score: {paragraph_score}, H-score: {header_score}, "
                             f"Decision: {'PARAGRAPH' if is_paragraph else 'HEADER'}")
         
@@ -348,7 +348,7 @@ class EnhancedDocumentReconstructor:
             if bold_scores:
                 avg_boldness = sum(bold_scores) / len(bold_scores)
                 # Your scores are around 100, so use a higher threshold
-                return avg_boldness > 60  # Adjust this threshold as needed
+                return avg_boldness > 800 
         
         # Fallback: check if text looks like a header
         text = block_data.get('block_text', '').strip()
@@ -360,6 +360,7 @@ class EnhancedDocumentReconstructor:
                 return True
         
         return False
+    
     def _get_font(self, size: int, weight: str = "regular") -> ImageFont.ImageFont:
         """Enhanced font retrieval with intelligent selection and weight support"""
         size = int(round(size))
@@ -406,7 +407,7 @@ class EnhancedDocumentReconstructor:
                 )
             },
             'main_header': {
-                'keywords': ['STATEMENT', 'OŚWIADCZENIE', 'EMPLOYER', 'CONFIRMATION', 'EMBASSY'],
+                'keywords': ['STATEMENT', 'OÃ…Å¡WIADCZENIE', 'EMPLOYER', 'CONFIRMATION', 'EMBASSY'],
                 'style': TextStyle(
                     font_size=36, 
                     font_weight="bold", 
@@ -518,7 +519,7 @@ class EnhancedDocumentReconstructor:
         avg_center_deviation = sum(center_deviations) / len(center_deviations)
         
         # Alignment detection thresholds
-        left_aligned_threshold = 0.05  # Small left margin
+        left_aligned_threshold = 0.03  # Small left margin
         right_aligned_threshold = 0.05  # Small right margin
         center_aligned_threshold = 0.05  # Small center deviation
         
@@ -556,7 +557,7 @@ class EnhancedDocumentReconstructor:
         
         # Analyze font characteristics using block-level font height
         for block in ocr_data:
-            estimated_height = block.get('estimated_font_height', 40)
+            estimated_height = 40
             boldness = 0
             
             # Try to get boldness from lines if available
@@ -601,7 +602,7 @@ class EnhancedDocumentReconstructor:
         text_upper = text.upper()
         
         # Get the estimated font height from OCR data - THIS IS THE KEY CHANGE
-        block_font_size = block_data.get('estimated_font_height', 40)
+        block_font_size = 40
         
         # Determine alignment
         detected_alignment = self._detect_content_alignment_within_block(block_data, text)
@@ -767,8 +768,29 @@ class EnhancedDocumentReconstructor:
         
         box = block_data['block_box']
         original_width = int((box[1][0] - box[0][0]) * self.canvas_width)
-        max_width = max(original_width, 200)  
-        lines = self._wrap_text_smart(text, font,style.font_size, max_width)
+
+        # Expand width if less than 70% of document width
+        threshold_width = int(self.canvas_width * 0.7)
+        if original_width < threshold_width:
+            if style.alignment == "left":
+                # Keep left edge fixed, extend to the right
+                max_width = threshold_width
+            elif style.alignment == "right":
+                # Keep right edge fixed, extend to the left
+                max_width = threshold_width
+            elif style.alignment == "center":
+                # Expand symmetrically around the center
+                max_width = threshold_width
+            else:
+                max_width = original_width
+        else:
+            max_width = original_width
+
+        # Ensure we donâ€™t go below a minimum width
+        max_width = max(max_width, 200)
+
+        lines = self._wrap_text_smart(text, font, style.font_size, max_width)
+
         if not lines:
             return
         
@@ -1032,7 +1054,7 @@ class EnhancedDocumentReconstructor:
             enhancer = ImageEnhance.Brightness(enhanced)
             enhanced = enhancer.enhance(1.02)
             
-            self.logger.info("✨ Quality enhancements applied successfully")
+            self.logger.info("Ã¢Å“Â¨ Quality enhancements applied successfully")
             
         except Exception as e:
             self.logger.warning(f"Quality enhancement failed: {e}, using original")
@@ -1157,4 +1179,3 @@ class EnhancedDocumentReconstructor:
             analysis['recommendations'].append("Many different font sizes detected - document may benefit from typography harmonization")
         
         return analysis
-

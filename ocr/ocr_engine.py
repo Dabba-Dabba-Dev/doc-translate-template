@@ -6,19 +6,15 @@ from doctr.io import DocumentFile
 from doctr.models import ocr_predictor
 import numpy as np
 import re
+import cv2
 
 def add_layout_newlines(text):
-    # Already contains '\n' where lines were short; just clean extra spaces
     text = re.sub(r' +', ' ', text)
     text = re.sub(r' *\n *', '\n', text)
     return text.strip()
 
-
 ocr_model = ocr_predictor(pretrained=True)
 
-def calculate_font_height(lines):
-    heights = [line["box"][3] - line["box"][1] for line in lines]
-    return np.median(heights) if heights else 20
 
 def calculate_line_spacing(lines):
     spacings = []
@@ -53,11 +49,101 @@ def should_merge_blocks(block1, block2, font_height, typical_spacing, alignment_
 
 def clean_text(text):
     """Basic text cleaning without sentence segmentation"""
-    text = re.sub(r'-\n', '', text)  # Remove hyphenated line breaks
-    text = re.sub(r'(\d+)\.\n', r'\1. ', text)  # Fix numbered lists
-    return text.replace('\n', ' ')  # Replace all newlines with spaces
+    text = re.sub(r'-\n', '', text)  
+    text = re.sub(r'(\d+)\.\n', r'\1. ', text)  
+    return text
 
-def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignment_tolerance=20, src_lang="en_XX"):
+def extract_line_text(line):
+    """Extract text including symbols and bullet points"""
+    text_parts = []
+    for word in line.words:
+        if word.confidence > 0.1:
+            text_parts.append(word.value)
+    return " ".join(text_parts)
+
+def calculate_boldness_score_improved(pil_image, line_data, font_height):
+    """
+    Improved boldness calculation using multiple approaches:
+    1. Pixel density analysis
+    2. Edge density
+    3. Variance-based approach
+    """
+    x_min, y_min, x_max, y_max = line_data["box"]
+    
+    # Add padding to ensure we capture the text properly
+    padding = 2
+    x_min = max(0, x_min - padding)
+    y_min = max(0, y_min - padding)
+    x_max = min(pil_image.width, x_max + padding)
+    y_max = min(pil_image.height, y_max + padding)
+    
+    # Extract the text region
+    try:
+        text_region = pil_image.crop((x_min, y_min, x_max, y_max))
+        
+        # Convert to grayscale
+        gray_region = text_region.convert('L')
+        region_array = np.array(gray_region)
+        
+        if region_array.size == 0:
+            return {"boldness_score": 0, "confidence": 0}
+        
+        # Method 1: Pixel Density Analysis
+        mean_intensity = np.mean(region_array)
+        threshold = mean_intensity * 0.8  
+        
+        dark_pixels = np.sum(region_array < threshold)
+        total_pixels = region_array.size
+        pixel_density = dark_pixels / total_pixels if total_pixels > 0 else 0
+        
+        # Method 2: Edge Density (more edges = thicker strokes)
+        edges = cv2.Canny(region_array, 50, 150)
+        edge_density = np.sum(edges > 0) / total_pixels if total_pixels > 0 else 0
+        
+        # Method 3: Standard Deviation of Intensities
+        intensity_std = np.std(region_array)
+        normalized_std = intensity_std / 255.0  
+        
+        # Method 4: Morphological Analysis
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        closed = cv2.morphologyEx(region_array, cv2.MORPH_CLOSE, kernel)
+        
+        # Compare original vs closed to estimate stroke thickness
+        diff = np.abs(closed.astype(float) - region_array.astype(float))
+        stroke_thickness_indicator = np.mean(diff) / 255.0
+        
+        # Combine all methods with weights
+        boldness_score = (
+            pixel_density * 40 +           
+            edge_density * 25 +            
+            normalized_std * 20 +          
+            stroke_thickness_indicator * 15 
+        ) * 100  
+        
+        # Calculate confidence based on text region size and clarity
+        region_height = y_max - y_min
+        region_width = x_max - x_min
+        min_size_threshold = 10  
+        
+        size_confidence = min(1.0, (region_height * region_width) / (min_size_threshold ** 2))
+        clarity_confidence = min(1.0, intensity_std / 64.0)  
+        
+        overall_confidence = (size_confidence + clarity_confidence) / 2
+        
+        return {
+            "boldness_score": boldness_score,
+            "confidence": overall_confidence,
+            "pixel_density": pixel_density,
+            "edge_density": edge_density,
+            "intensity_std": normalized_std,
+            "stroke_thickness": stroke_thickness_indicator
+        }
+        
+    except Exception as e:
+        print(f"Warning: Error calculating boldness for region ({x_min}, {y_min}, {x_max}, {y_max}): {e}")
+        return {"boldness_score": 0, "confidence": 0}
+
+def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignment_tolerance=20):
     with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
         pil_image.save(tmp.name)
         tmp_path = tmp.name
@@ -81,30 +167,30 @@ def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignm
                 y_min = int(line.geometry[0][1] * h)
                 x_max = int(line.geometry[1][0] * w)
                 y_max = int(line.geometry[1][1] * h)
-
-                line_text = " ".join([word.value for word in line.words])
-                thickness = np.mean([word.confidence for word in line.words]) if line.words else 0.5
-                height = y_max - y_min
-                boldness_score = thickness * height
+                line_text = extract_line_text(line)
+                
                 alignment_group = get_alignment_group(x_min, alignment_tolerance)
 
                 all_lines.append({
                     "text": line_text,
                     "box": (x_min, y_min, x_max, y_max),
                     "center_y": (y_min + y_max) / 2,
-                    "boldness_score": boldness_score,
                     "alignment_group": alignment_group
                 })
 
+    # Sort AFTER collecting all lines
     all_lines.sort(key=lambda x: x["center_y"])
     if not all_lines:
         return []
 
-    font_height = calculate_font_height(all_lines)
+    font_height = 40
     typical_spacing = calculate_line_spacing(all_lines)
 
-    print(f"[INFO] Estimated font height: {font_height:.1f}px")
-    print(f"[INFO] Typical line spacing: {typical_spacing:.1f}px")
+
+    # Calculate boldness scores for all lines (now with font_height context)
+    for line in all_lines:
+        boldness_info = calculate_boldness_score_improved(pil_image, line, font_height)
+        line.update(boldness_info)
 
     # Group lines into blocks by vertical spacing
     blocks = []
@@ -126,6 +212,7 @@ def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignm
 
     # Merge blocks based on vertical gap & alignment
     merged_blocks = [blocks[0]] if blocks else []
+    
     for i in range(1, len(blocks)):
         current_block = blocks[i]
         last_merged_block = merged_blocks[-1]
@@ -135,7 +222,6 @@ def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignm
         else:
             merged_blocks.append(current_block)
 
-    # Helper: check if line fills block width
     def line_fills_block(line, block_width, threshold=0.9):
         line_width = line["box"][2] - line["box"][0]
         return (line_width / block_width) >= threshold
@@ -148,27 +234,35 @@ def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignm
         block_x_min = min(line["box"][0] for line in block)
         block_x_max = max(line["box"][2] for line in block)
         block_width = block_x_max - block_x_min
-
+        
         block_lines_text = []
         for line in block:
-            if line_fills_block(line, block_width):
-                block_lines_text.append(line["text"])  # merge with next line
+            if line_fills_block(line, block_width) and not line["text"].strip().endswith(('.', ',', ';', ':', '!', '?')):
+                block_lines_text.append(line["text"]) 
             else:
-                block_lines_text.append(line["text"] + "\n")  # keep newline for layout
+                block_lines_text.append(line["text"] + "\n") 
 
         raw_text = " ".join(block_lines_text)
         block_text = add_layout_newlines(raw_text)
 
+        # Calculate average boldness for the block
+        valid_boldness_scores = [line["boldness_score"] for line in block if line.get("confidence", 0) > 0.3]
+        avg_boldness = np.mean(valid_boldness_scores) if valid_boldness_scores else 0
 
-        # Draw overlay
+        # Draw overlay with boldness indication
         x_min = block_x_min
         y_min = min(line["box"][1] for line in block)
         x_max = block_x_max
         y_max = max(line["box"][3] for line in block)
 
         color = colors[idx % len(colors)]
-        draw.rectangle([x_min, y_min, x_max, y_max], outline=color, width=3)
-        draw.text((x_min, y_min - 20), f"Block {idx+1}", fill=color)
+        # Make border thicker for bold text
+        border_width = 5 if avg_boldness > 30 else 3
+        draw.rectangle([x_min, y_min, x_max, y_max], outline=color, width=border_width)
+        
+        # Add boldness info to label
+        label = f"Block {idx+1} (Bold: {avg_boldness:.1f})"
+        draw.text((x_min, y_min - 20), label, fill=color)
 
         output.append({
             "block_id": idx + 1,
@@ -178,7 +272,7 @@ def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignm
                 [x_max / w, y_max / h]
             ],
             "line_count": len(block),
-            "estimated_font_height": font_height,
+            "average_boldness": avg_boldness,
             "lines": [
                 {
                     "text": line["text"],
@@ -186,7 +280,8 @@ def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignm
                         [line["box"][0] / w, line["box"][1] / h],
                         [line["box"][2] / w, line["box"][3] / h]
                     ],
-                    "boldness_score": line["boldness_score"],
+                    "boldness_score": line.get("boldness_score", 0),
+                    "boldness_confidence": line.get("confidence", 0),
                     "alignment_group": line["alignment_group"]
                 }
                 for line in block
@@ -194,7 +289,15 @@ def extract_blocks_with_boxes(pil_image, image_path="output_overlay.png", alignm
         })
 
     pil_image.save(image_path)
-    print(f"[✔] Overlay image saved to {image_path}")
-    print(f"[✔] Created {len(output)} blocks from {len(all_lines)} lines")
+    print(f"[âœ”] Overlay image saved to {image_path}")
+    print(f"[âœ”] Created {len(output)} blocks from {len(all_lines)} lines")
+
+    # Print boldness summary
+    print("\n[BOLDNESS ANALYSIS]")
+    for block in output:
+        print(f"Block {block['block_id']}: Average boldness = {block['average_boldness']:.1f}")
+        for line in block['lines']:
+            if line['boldness_confidence'] > 0.3:  
+                print(f"  Line: '{line['text'][:50]}...' - Bold: {line['boldness_score']:.1f}")
 
     return output
